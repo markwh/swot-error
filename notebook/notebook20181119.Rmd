@@ -1,0 +1,176 @@
+---
+title: "notebook20181119"
+author: "Mark Hagemann"
+date: "November 19, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+foo <- nc_open("../data/sac-pixc/109_ellip_off_heights_sac_cycle_0001_pass_0249_presum2.125.AzPTR.Presum.Noise.LeftSwath.Unflat.Multilook_L2PIXC.nc")
+
+# foo
+if_real <- ncvar_get(foo, varid = "ifgram_real")
+if_imag <- ncvar_get(nc = foo, varid = "ifgram_imag")
+pwr1 <- ncvar_get(foo, varid = "power_left")
+pwr2 <- ncvar_get(foo, varid = "power_right")
+
+nlooks <- ncvar_get(foo, "num_looks")
+
+nc_close(foo)
+```
+
+Per Brent's email: |complex ifgram| / sqrt(power1 * power2)
+
+
+Some interferogram values are negative. Like 1/4 of them. Just omit for now.
+
+```{r}
+
+# if_real[if_real <= 0] <- NA
+# if_imag[if_imag <= 0] <- NA
+
+# coh_denom_log <- 1/2 * (log(if_real) + log(if_imag))
+coh_denom_log <- 1/2 * (log(pwr1) + log(pwr2))
+
+coh_denom <- exp(coh_denom_log)
+if_norm <- sqrt(if_real^2 + if_imag^2)
+
+coh_calc_log <- log(if_norm) - coh_denom_log
+
+coh_calc <- if_norm / coh_denom
+
+summary(if_real)
+summary(if_imag)
+summary(pwr1)
+summary(pwr2)
+summary(coh_calc)
+
+```
+
+This works somehow! Even though orders of magnitude are crazy wide-ranging!
+
+Next compute variance
+
+```{r}
+var_approx <- 1 / (2 * nlooks) * (1 - coh_calc^2) / coh_calc^2
+summary(var_approx)
+```
+
+To aggregate this, I'll need a node shapefile. Also a DEM.
+
+
+
+```{r}
+foo <- nc_open("../data/sac-pixc/109_ellip_off_heights_sac_cycle_0001_pass_0249_presum2.125.AzPTR.Presum.Noise.LeftSwath.Unflat.Multilook_L2PIXC.nc")
+
+med_lat <- ncvar_get(foo, "latitude_medium")
+med_lon <- ncvar_get(foo, "longitude_medium")
+wd_lat <- ncvar_get(foo, "latitude_welldone")
+wd_lon <- ncvar_get(foo, "longitude_welldone")
+
+plot(wd_lat[1:1000 * 100], med_lat[1:1000 * 100])
+length(unique(wd_lat))
+length(unique(med_lat))
+
+nc_close(foo)
+```
+
+Now about that shapefile.
+
+```{r}
+
+node_shp <- st_read("../data/sac-nodedb/Sacramento-NodeDatabase.shp")
+reach_shp <- st_read("../data/sac-reachdb/Sacramento-ReachDatabase.shp")
+
+plot(node_shp)
+plot(reach_shp["Reach_ID"])
+
+glimpse(node_shp)
+glimpse(reach_shp)
+```
+
+Now make a spatial data.frame for the pixc data. Then I can assign to nodes.
+
+```{r}
+foo <- nc_open("../data/sac-pixc/109_ellip_off_heights_sac_cycle_0001_pass_0249_presum2.125.AzPTR.Presum.Noise.LeftSwath.Unflat.Multilook_L2PIXC.nc")
+
+names(foo$var)
+
+getvec <- function(...) {
+  out0 <- ncvar_get(...)
+  out <- as.vector(out0)
+  out
+}
+pixc_df <- data.frame(
+  lat = getvec(foo, "latitude_medium"),
+  lon = getvec(foo, "longitude_medium"),
+  height = getvec(foo, "height_medium"),
+  class = getvec(foo, "classification"),
+  nlooks = getvec(foo, "num_looks"),
+  dhdphi = getvec(foo, "dheight_dphase_medium"), # meters per radian
+  phase_var = as.vector(var_approx)
+)
+
+nc_close(foo)
+
+pixc_sf <- st_as_sf(pixc_df, coords = c("lon", "lat"), crs = 4326)
+glimpse(pixc_sf)
+```
+
+
+Aggregate by node.
+
+I need (pretty sure) a different package for doing Thiessen analysis
+
+Or not. Try `st_nearest_points` NOPE!
+
+```{r}
+library(dismo)
+
+spts <- as(node_shp$geometry, "Spatial")
+node_voroni <- voronoi(spts)
+
+plot(node_voroni)
+points(sample_n(pixc_sf, 100), col = "red")
+node_voroni_sf <- st_as_sf(node_voroni)
+
+glimpse(node_voroni_sf)
+```
+
+Aggregate!
+
+```{r}
+pixc_agg <- st_within(sample_n(pixc_sf, 10000), node_voroni_sf, sparse = FALSE)
+
+dim(pixc_agg)
+anywhich <- function(x) ifelse(length(which(x)) < 1, NA, which(x))
+elems <- apply(pixc_agg, 1, anywhich)
+
+```
+
+Not within! Time to plot more interactively.
+
+```{r}
+library(leaflet)
+
+leaflet(node_voroni_sf) %>% 
+  addTiles() %>% 
+  addPolygons() %>% 
+  addCircleMarkers(data = sample_n(pixc_sf, 1000), radius = 2, color = "red")
+
+```
+
+Getting to the limits of what I can do on the laptop. Finish workflow, then leave scaling-up for a more muscular machine.
+
+- Attach nearest node info to pixc. 
+- aggregate variance by node, paying attention to classification
+- Get validation heights
+
+```{r}
+
+```
+

@@ -1,0 +1,33 @@
+---
+title: "Phase Error"
+author: "Mark Hagemann"
+date: "October 19, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Trying to understand Brent's phase error document. 
+
+
+Starting with the pdf of $\phi | \phi_t$.
+
+```{r}
+
+dphase <- function(phi, gamma, phitrue, N) {
+  
+  out <- function(phi) {
+    beta <- gamma * (cos(phi - phitrue))
+    part1_num <- gamma(N + 1/2) * (1 - gamma^2) * beta
+    part1_denom <- 2 * sqrt(pi) * gamma(N) * (1 - beta^2)^(N + 1/2)
+    part2 <- (1 - gamma^2)^N / (2 * pi) * dhyper(N, )
+  }
+}
+
+z <- 1 + 1/2i
+hypergeo::hypergeo(1, 1, 1/2, z)
+(1 - z)^(-1) * (1 + (sqrt(z) * asin(sqrt(z))) / sqrt(1 - z))
+```
+
