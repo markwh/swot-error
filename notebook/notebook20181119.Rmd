@@ -12,7 +12,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ```{r}
 foo <- nc_open("../data/sac-pixc/109_ellip_off_heights_sac_cycle_0001_pass_0249_presum2.125.AzPTR.Presum.Noise.LeftSwath.Unflat.Multilook_L2PIXC.nc")
 
-# foo
+foo
 if_real <- ncvar_get(foo, varid = "ifgram_real")
 if_imag <- ncvar_get(nc = foo, varid = "ifgram_imag")
 pwr1 <- ncvar_get(foo, varid = "power_left")
@@ -83,6 +83,7 @@ Now about that shapefile.
 
 ```{r}
 
+
 node_shp <- st_read("../data/sac-nodedb/Sacramento-NodeDatabase.shp")
 reach_shp <- st_read("../data/sac-reachdb/Sacramento-ReachDatabase.shp")
 
@@ -110,6 +111,7 @@ pixc_df <- data.frame(
   lon = getvec(foo, "longitude_medium"),
   height = getvec(foo, "height_medium"),
   class = getvec(foo, "classification"),
+  xtrack = getvec(foo, "cross_track_medium"),
   nlooks = getvec(foo, "num_looks"),
   dhdphi = getvec(foo, "dheight_dphase_medium"), # meters per radian
   phase_var = as.vector(var_approx)
@@ -117,7 +119,10 @@ pixc_df <- data.frame(
 
 nc_close(foo)
 
-pixc_sf <- st_as_sf(pixc_df, coords = c("lon", "lat"), crs = 4326)
+pixc_sf <- pixc_df %>% 
+  filter(lat > 0) %>% 
+  st_as_sf(coords = c("lon", "lat"), crs = 4326) %>% 
+  mutate(h_var_pix = phase_var * dhdphi^2)
 glimpse(pixc_sf)
 ```
 
@@ -135,7 +140,7 @@ spts <- as(node_shp$geometry, "Spatial")
 node_voroni <- voronoi(spts)
 
 plot(node_voroni)
-points(sample_n(pixc_sf, 100), col = "red")
+# points(sample_n(pixc_sf, 100), col = "red")
 node_voroni_sf <- st_as_sf(node_voroni)
 
 glimpse(node_voroni_sf)
@@ -170,7 +175,136 @@ Getting to the limits of what I can do on the laptop. Finish workflow, then leav
 - aggregate variance by node, paying attention to classification
 - Get validation heights
 
+...
+
+Back and coockin' on the desktop now!
+
+Map pixc to nodes.
+
 ```{r}
+pixc_agnode <- pixc_sf %>% 
+  st_within(node_voroni_sf, sparse = FALSE)
+
+whichnode <- apply(pixc_agnode, 1, anywhich)
+
+pixc_sf$nodeid <- whichnode
+
+pixc_sf %>% 
+  filter(nodeid == nodeid[1]) %>% 
+  dplyr::select(class) %>% 
+  plot()
+```
+
+
+
+```{r}
+pal <- colorNumeric(
+  palette = "Blues",
+  domain = pixc_sf$nodeid)
+
+pal2 <- colorNumeric(
+  palette = "Blues",
+  domain = pixc_sf$xtrack)
+
+pal3 <- colorNumeric(
+  palette = "Blues",
+  domain = pixc_sf$dhdphi)
+
+pal4 <- colorNumeric(
+  palette = "Blues",
+  domain = log(pixc_sf$phase_var))
+
+
+pixc_sf %>% 
+  sample_n(5000) %>% 
+  leaflet() %>% 
+  addTiles() %>% 
+  addCircleMarkers(radius = 2, color = ~pal3(dhdphi))
+  # addCircleMarkers(radius = 2, color = ~pal4(log(phase_var)))
+```
+
+
+
+Estimate height, aggregate variance.
+
+```{r}
+glimpse(pixc_sf)
+pixc_ag_sf <- pixc_sf %>% 
+  group_by(nodeid) %>% 
+  summarize(height = mean(height), medheight = median(height),
+            h_var_node = mean(h_var_pix))
 
 ```
 
+Now get the truth
+
+```{r}
+sac_node_truth <- st_read("../data/sac-truth/SWOT_L2_HR_River_SP_001_249_Sac_20090109T000000_Node_Truth/SWOT_L2_HR_River_SP_001_249_Sac_20090109T000000_Node_Truth/SWOT_L2_HR_River_SP_001_249_Sac_20090109T000000_Node_Truth.shp") %>% 
+  sf:::select.sf(reach_id, node_id, height, width)
+
+nodemap <- st_within(sac_node_truth, node_voroni_sf, sparse = FALSE)
+
+sac_node_truth$nodeid <- apply(nodemap, 1, anywhich)
+```
+
+
+```{r}
+pixc_ag_df <- within(as.data.frame(pixc_ag_sf), {geometry = NULL})
+sac_node_truth_df <- within(sac_node_truth, {geometry = NULL})
+valdf <- pixc_ag_df %>% 
+  rename(h_pixc = height) %>% 
+  left_join(sac_node_truth_df, by = "nodeid", st_join = FALSE) %>% 
+  mutate(h_offset = mean(h_pixc - height, na.rm = TRUE),
+         h_adj = h_pixc - h_offset)
+  
+
+head(valdf)
+
+plot(height ~ h_adj, valdf, xlim = c(0, 50)); abline(0, 1)
+```
+
+
+```{r}
+valdf %>% 
+  glimpse() %>% 
+  mutate(sqrresid = (h_adj - height)^2) %>% 
+  plot(sqrt(sqrresid) ~ sqrt(h_var_node), ., log = "xy")
+```
+
+
+No apparent signal there. Can I show variance changing with position in cross-track?
+
+```{r}
+
+valdf_full <- pixc_sf %>% 
+  as.data.frame() %>% 
+  dplyr::select(-geometry) %>% 
+  sample_n(1000) %>% 
+  rename(h_pixc = height) %>% 
+  left_join(sac_node_truth_df, by = "nodeid", st_join = FALSE) %>% 
+  mutate(h_offset = mean(h_pixc - height, na.rm = TRUE),
+         h_adj = h_pixc - h_offset)
+  
+valdf_full %>% 
+  glimpse() %>% 
+  mutate(resid = h_adj - height) %>% 
+  # ggplot(aes(x = h_var_pix, y = resid^2)) + 
+  ggplot(aes(x = dhdphi^2, y = resid^2)) + 
+  geom_point() +
+  scale_x_log10() +
+  scale_y_log10()
+
+```
+
+Time to put this into a script and do a proper set of analysis and presentation. 
+
+- Math (from Brent's document, email correspondence)
+- maps (static and interactive)
+    - height
+    - Node aggregation (couple of nodes, sample of pixels for all nodes)
+    - 
+- Pixel-scale residuals
+    - with estimated variance
+    - with cross-track position
+    - with dh/dphi
+- Node-scale residuals

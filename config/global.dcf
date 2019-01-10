@@ -1,14 +1,14 @@
 version: 0.8.2
-data_loading: TRUE
+data_loading: FALSE
 data_loading_header: TRUE
 data_ignore:
 cache_loading: TRUE
 recursive_loading: FALSE
-munging: TRUE
+munging: FALSE
 logging: FALSE
 logging_level: INFO
 load_libraries: TRUE
-libraries: ncdf4, ggplot2, purrr, tidyr, dplyr, sf
+libraries: ncdf4, ggplot2, purrr, tidyr, sf, dismo, dplyr
 as_factors: TRUE
 data_tables: FALSE
 attach_internal_libraries: FALSE

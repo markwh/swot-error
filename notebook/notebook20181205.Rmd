@@ -1,0 +1,97 @@
+---
+title: "notebook20181205"
+author: "Mark Hagemann"
+date: "December 4, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Checking out new data from Brent.
+
+```{r}
+pixnc <- nc_open("../data/sac-pixc-20181204/GDEM-DEM-ellip-109-0249/pixel_cloud.nc")
+
+pixnc$groups
+names(pixnc$var)
+
+nc_close(pixnc)
+```
+
+
+```{r}
+gdemnc <- nc_open("../data/sac-pixc-20181204/GDEM-DEM-ellip-109-0249/gdem_truth.LeftSwath.nc")
+
+# names(gdemnc$var)
+# gdemnc$dim[[1]] %>% str(1)
+# gdemnc$dim[[2]] %>% str(1)
+gdemlats <- ncvar_get(gdemnc, "latitude")
+gdemlons <- ncvar_get(gdemnc, "longitude")
+gdemelevs <- ncvar_get(gdemnc, "elevation")
+
+
+nc_close(gdemnc)
+```
+
+```{r}
+dim(gdemlats) # 7001 pixels (rows), 9760 "record"s (columns)
+pryr::object_size(gdemlats)
+
+gdemlats[1:10, 1:10]
+
+plot(gdemlats[1:200, 1], type = "l")
+lines(gdemlats[1:200, 4])
+
+dim(gdemelevs)
+gdemelevs[1:10, 1:10]
+sum(!is.na(gdemelevs))
+sum(is.na(gdemelevs))
+
+
+plot(gdemelevs[1:200, 1], type = "l")
+lines(gdemelevs[1:200, 4])
+
+```
+
+Don't worry about the gdems. See if I can just use Rui's. 
+
+```{r}
+pixnc <- nc_open("../data/sac-pixc-20181204/GDEM-DEM-ellip-109-0249/pixel_cloud.nc")
+
+pixnc$groups
+names(pixnc$var)
+pixnc$var$`noise/noise_minus_y` %>% str(1)
+pixnc$var$`noise/noise_minus_y`$id %>% str(1)
+
+pixnc$var$`pixel_cloud/phase_noise_std` %>% str(1)
+
+pix
+
+nc_close(pixnc)
+```
+
+```{r}
+pixnc <- nc_open("../data/sac-pixc-20181204/GDEM-DEM-ellip-109-0249/pixel_cloud.nc")
+
+pixnc$var$latit
+
+getvec <- function(...) {
+  out0 <- ncvar_get(...)
+  out <- as.vector(out0)
+  out
+}
+pixc_df <- data.frame(
+  lat = getvec(pixnc, "pixc/latitude"),
+  lon = getvec(pixnc, "pixc/longitude"),
+  height = getvec(pixnc, "pixc/height"),
+  class = getvec(pixnc, "classification"),
+  xtrack = getvec(pixnc, "cross_track_medium"),
+  nlooks = getvec(pixnc, "num_looks"),
+  dhdphi = getvec(pixnc, "dheight_dphase_medium") # meters per radian
+)
+nc_close(pixnc)
+```
+
+

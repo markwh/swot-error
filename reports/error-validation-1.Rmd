@@ -1,0 +1,271 @@
+---
+title: "error-validation1"
+author: "Mark Hagemann"
+date: "November 28, 2018"
+output: ioslides_presentation
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Overview
+
+This document summarizes some preliminary work predicting and validating uncertainty in SWOT height measurements, using the SWOT instrument simulator and geodem height data from the Sacramento river.
+
+```{r, include=FALSE}
+library(knitr)
+opts_knit$set(root.dir = "..")
+opts_chunk$set(echo = FALSE, cache = TRUE, message = FALSE, warning = FALSE)
+```
+
+
+```{r}
+library(ProjectTemplate)
+load.project()
+
+```
+
+```{r, eval = FALSE}
+dim(pixc_sf)
+length(unique(pixc_sf$nodeid))
+names(pixc_sf)
+
+```
+
+
+## Dataset
+
+The PIXC simulator output contains approximately 520000 pixels from the Sacramento River, corresponding to 756 SWOT nodes. The pixel data include numerous fields, including location, classification (land, water, etc.), number of looks, height sensitivity, interferogram components (real and imaginary), and radar power. A random sample of size 10000 from the pixel cloud is shown below
+
+## Dataset
+
+```{r}
+# pixc_sf %>% 
+#   sample_n(100) %>% 
+#   ggplot(aes(color = nodeid)) +
+#   geom_sf()
+
+library(leaflet)
+pal <- colorNumeric(
+  palette = "Spectral",
+  domain = pixc_sf$nodeid)
+
+pal2 <- colorNumeric(
+  palette = "Spectral",
+  domain = pixc_sf$height)
+
+
+pixc_sf %>% 
+  sample_n(10000) %>% 
+  leaflet() %>% 
+  addTiles() %>% 
+  addCircleMarkers(radius = 2, color = ~pal2(height)) %>% 
+  addLegend(pal = pal2, values = ~height)
+```
+
+## Water and water-near-land only
+
+```{r}
+pixc_sf %>% 
+  filter(class > 2) %>% 
+  sample_n(10000) %>% 
+  leaflet() %>% 
+  addTiles() %>% 
+  addCircleMarkers(radius = 2, color = ~pal2(height)) %>% 
+  addLegend(pal = pal2, values = ~height)
+```
+
+
+## Zoomed in
+
+Here is the full pixel cloud for the 2 northernmost nodes (colored by node). 
+
+```{r}
+pal3 <- colorNumeric(
+  palette = "Spectral",
+  domain = 1:2)
+
+pixc_sf %>% 
+  filter(nodeid %in% c(1, 2)) %>% 
+  leaflet() %>% 
+  addTiles() %>% 
+  addCircleMarkers(radius = 2, color = ~pal3(nodeid))
+```
+
+## Zoomed in
+
+The same location, colored by pixel classification.
+
+
+```{r}
+pal4 <- colorNumeric(
+  palette = "Spectral",
+  domain = 1:4)
+
+pixc_sf %>% 
+  filter(nodeid %in% c(1, 2)) %>% 
+  leaflet() %>% 
+  addTiles() %>% 
+  addCircleMarkers(radius = 2, color = ~pal4(class)) %>% 
+  addLegend(pal = pal4, values = ~class)
+
+```
+
+
+
+## Theory
+
+Interferometric phase variance is approximated by the Cramer-Rao lower bound given in Rodriguez and Martin (1992):
+
+$$
+\sigma^2_\phi = \frac{1}{2 N_L}\frac{1 - \gamma^2}{\gamma^2}
+$$
+
+This is converted to variance of height error by scaling by the height sensitivity, $d_h$. 
+
+$$
+\sigma^2_h = d_h^2\sigma_\phi^2
+$$
+
+## Pixel-scale results
+
+```{r}
+pixc_ag_df <- within(as.data.frame(pixc_ag_sf), {geometry = NULL})
+sac_node_truth_df <- within(sac_node_truth, {geometry = NULL})
+
+valdf_node <- pixc_ag_df %>% 
+  rename(h_pixc = height) %>% 
+  left_join(sac_node_truth_df, by = "nodeid", st_join = FALSE) %>% 
+  mutate(h_offset = mean(h_pixc - height, na.rm = TRUE),
+         h_adj = h_pixc - h_offset)
+valdf_pix <- pixc_sf %>% 
+  as.data.frame() %>% 
+  dplyr::select(-geometry) %>% 
+  dplyr::filter(class > 2) %>% 
+  sample_n(10000) %>% 
+  rename(h_pixc = height) %>% 
+  left_join(sac_node_truth_df, by = "nodeid", st_join = FALSE) %>% 
+  mutate(h_offset = mean(h_pixc - height, na.rm = TRUE),
+         h_adj = h_pixc - h_offset,
+         resid = height - h_adj)
+  
+```
+
+Height residuals density plot (empirical)
+
+```{r}
+valdf_pix %>% 
+  ggplot(aes(x = resid)) +
+  geom_density()
+
+```
+
+## Error model validation
+
+Histogram of predicted height, with overall empirical residual standard deviation shwon as vertical line.
+
+```{r}
+valdf_pix %>% 
+  # glimpse() %>% 
+  dplyr::filter(sqrt(h_var_pix) < 40) %>% 
+  ggplot(aes(x = sqrt(h_var_pix))) +
+  geom_histogram() +
+  geom_vline(aes(xintercept = sd(valdf_pix$resid, na.rm = TRUE)))
+  
+  # scale_x_log10()
+```
+
+
+
+```{r, eval = FALSE}
+summary(sqrt(pixc_sf$h_var_pix))
+
+with(valdf_pix, summary(abs(h_adj - height)))
+```
+
+## Error model validation
+
+Estimated height standard deviation at the pixel level ranged from 0.001m to over 8000m, with a median of 3.34m. Empirical errors at the pixel level (using node-level heights as "truth") ranged from 0.11m to 29.9m in absolute value, with a median of 4.64m. 
+
+While the variance model has some skill in predicting the pixel height error magnitude, it severely overestimates the error variance except for the smallest variance estimates. 
+
+## Validation residuals, predicted standard deviation
+
+```{r}
+valdf_pix %>% 
+  sample_n(5000) %>% 
+  mutate(abs_resid = abs(resid)) %>% 
+  ggplot(aes(x = sqrt(h_var_pix), y = abs_resid)) +
+  geom_point(alpha = 0.2) +
+  scale_x_log10() + scale_y_log10() +
+  stat_smooth() +
+  geom_abline(aes(slope = 1, intercept = 0))
+```
+
+## Squared validation residuals, predicted variance
+
+```{r}
+valdf_pix %>% 
+  sample_n(5000) %>% 
+  mutate(sq_resid = resid^2) %>% 
+  ggplot(aes(x = h_var_pix, y = sq_resid)) +
+  geom_point(alpha = 0.2) +
+  scale_x_log10() + scale_y_log10() +
+  # xlim(0, 25) + ylim(0, 25) +
+  stat_smooth() +
+  geom_abline(aes(slope = 1, intercept = 0))
+```
+
+## Empirical variance validation by decile of prediction
+
+```{r}
+valdf_pix %>% 
+  mutate(var_bin = cut(h_var_pix, breaks = quantile(h_var_pix, 0:10 / 10))) %>% 
+  group_by(var_bin) %>% 
+  summarize(val_var = var(resid, na.rm = TRUE)) %>% 
+  mutate(binbnd = gsub("\\(", "", x = var_bin),
+         binbnd = gsub("\\]", "", x = binbnd),
+         varest_lwr = as.numeric(markstats::splitPiece(binbnd, ",", piece = 1)),
+         varest_upr = as.numeric(markstats::splitPiece(binbnd, ",", piece = 2))) %>% 
+  ggplot(aes(x = varest_lwr, xend = varest_upr, y = val_var, yend = val_var)) +
+  geom_segment() +
+  coord_cartesian(xlim = c(0, 30), ylim = c(0, 10)) +
+  # scale_x_log10() + scale_y_log10() +
+  geom_abline(slope = 1, intercept = 0, color = "#cccccc") +
+  xlab("estimated variance") + ylab("empirical variance")
+
+ggsave("../graphs/pixc_val1.png")
+
+```
+
+
+## Errors by cross-track distance
+
+```{r}
+valdf_pix %>% 
+  sample_n(5000) %>% 
+  mutate(abs_resid = abs(resid)) %>% 
+  ggplot(aes(x = abs(xtrack), y = abs_resid)) +
+  geom_point(aes(color = class), alpha = 0.4) +
+  scale_x_log10() + scale_y_log10() +
+  stat_smooth() +
+  geom_abline(aes(slope = 1, intercept = 0))
+```
+
+## Errors by height sensitivity
+
+```{r}
+valdf_pix %>% 
+  sample_n(5000) %>% 
+  mutate(abs_resid = abs(resid)) %>% 
+  ggplot(aes(x = abs(dhdphi), y = abs_resid, color = class)) +
+  geom_point(alpha = 0.4) +
+  scale_x_log10() + scale_y_log10() +
+  stat_smooth() +
+  geom_abline(aes(slope = 1, intercept = 0))
+
+```
+
+
+
