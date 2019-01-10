@@ -75,7 +75,7 @@ nc_close(pixnc)
 ```{r}
 pixnc <- nc_open("../data/sac-pixc-20181204/GDEM-DEM-ellip-109-0249/pixel_cloud.nc")
 
-pixnc$var$latit
+# pixnc$var$`pixel_cloud/phase_noise_std`
 
 getvec <- function(...) {
   out0 <- ncvar_get(...)
@@ -83,15 +83,29 @@ getvec <- function(...) {
   out
 }
 pixc_df <- data.frame(
-  lat = getvec(pixnc, "pixc/latitude"),
-  lon = getvec(pixnc, "pixc/longitude"),
-  height = getvec(pixnc, "pixc/height"),
-  class = getvec(pixnc, "classification"),
-  xtrack = getvec(pixnc, "cross_track_medium"),
-  nlooks = getvec(pixnc, "num_looks"),
-  dhdphi = getvec(pixnc, "dheight_dphase_medium") # meters per radian
+  lat = getvec(pixnc, "pixel_cloud/latitude"),
+  lon = getvec(pixnc, "pixel_cloud/longitude"),
+  height = getvec(pixnc, "pixel_cloud/height"),
+  class = getvec(pixnc, "pixel_cloud/classification"),
+  xtrack = getvec(pixnc, "pixel_cloud/cross_track"),
+  nlooks = getvec(pixnc, "pixel_cloud/num_med_looks"),
+  dhdphi = getvec(pixnc, "pixel_cloud/dheight_dphase"),
+  phi_std = getvec(pixnc, "pixel_cloud/phase_noise_std") # meters per radian
 )
 nc_close(pixnc)
+
+head(pixc_df)
+glimpse(pixc_df)
 ```
 
+```{r}
+pixc_sf <- pixc_df %>% 
+  mutate(h_std_pix = phi_std * dhdphi,
+         h_var_pix = h_std_pix^2) %>% 
+  dplyr::filter(lat > 0) %>% 
+  st_as_sf(coords = c("lon", "lat"))
+
+glimpse(pixc_sf)
+
+```
 

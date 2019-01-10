@@ -1,0 +1,76 @@
+---
+title: "notebook20190109"
+author: "Mark Hagemann"
+date: "January 9, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Time to get R and Python to join forces. I'll try using `reticulate` for that. 
+
+```{r}
+library(reticulate)
+
+use_condaenv("RiverObs", required = TRUE)
+```
+
+That appears to have worked. Now how do I use python commands?
+
+```{r}
+source_python("../src/imports.py")
+pygdal <- import("osgeo")
+```
+
+Now that that works (after updating reticulate), see if I can flat-out run the script.
+
+```{r}
+source_python("../src/7SAC_264_l2_newfields.py")
+```
+
+It works!
+
+Now back to the previous task: inspecting Brent's sample uncertainty file.
+
+- Map the heights
+- Map the estimated uncertainty
+- Calculate empirical uncertainty
+
+```{r}
+ncfile <- "../../riverobs-data/uncertainty_example/pixel_cloud.nc"
+
+ncobj <- nc_open(ncfile)
+names(ncobj$var)
+
+nc_close(ncobj)
+```
+
+How about a function to plot from an open pixc netcdf file?
+
+```{r}
+pixc_map <- function(ncobj, varname, subset = 500, 
+                     prefix = "pixel_cloud/", plot = TRUE) {
+  lats <- ncvar_get(ncobj, "pixel_cloud/latitude")
+  len <- attr(lats, "dim")
+  keepinds <- sort(sample(1:len, size = min(len, subset)))
+  
+  lats <- as.vector(lats[keepinds])
+  lons <- as.vector(ncvar_get(ncobj, "pixel_cloud/longitude")[keepinds])
+  vars <- as.vector(ncvar_get(ncobj, paste0(prefix, varname))[keepinds])
+  
+  plotdf <- setNames(data.frame(lat = lats, lon = lons, var = vars),
+                     c("lat", "lon", varname))
+  if (!plot) return(plotdf)
+  
+  pal <- colorNumeric(palette = "YlOrRd", domain = vars)
+  out <- leaflet(plotdf) %>% 
+    addTiles() %>% 
+    addCircleMarkers(lng = ~lon, lat = ~lat, color = ~pal(plotdf[[varname]]))
+  out
+}
+```
+
+
+
