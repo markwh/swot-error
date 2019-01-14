@@ -12,7 +12,7 @@ knitr::opts_chunk$set(echo = TRUE)
 Checking out new data from Brent.
 
 ```{r}
-pixnc <- nc_open("../data/sac-pixc-20181204/GDEM-DEM-ellip-109-0249/pixel_cloud.nc")
+pixnc <- nc_open("../../riverobs-data/sac-pixc-20181204/GDEM-DEM-ellip-109-0249/pixel_cloud.nc")
 
 pixnc$groups
 names(pixnc$var)

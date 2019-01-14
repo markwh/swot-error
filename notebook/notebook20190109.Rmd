@@ -50,7 +50,9 @@ nc_close(ncobj)
 How about a function to plot from an open pixc netcdf file?
 
 ```{r}
-pixc_map <- function(ncobj, varname, subset = 500, 
+
+
+pixc_map <- function(ncobj, vars, subset = 500, 
                      prefix = "pixel_cloud/", plot = TRUE) {
   lats <- ncvar_get(ncobj, "pixel_cloud/latitude")
   len <- attr(lats, "dim")
@@ -73,4 +75,66 @@ pixc_map <- function(ncobj, varname, subset = 500,
 ```
 
 
+What about the river "rivers..." shapefile?
+
+```{r}
+rivers_sf <- st_read("../../riverobs-data/uncertainty_example/rivers-10x250-0-tiny-normal.shp")
+
+glimpse(rivers_sf)
+
+library(leaflet)
+
+leaflet(rivers_sf) %>% 
+  addTiles() %>% 
+  addPolylines()
+```
+
+I wonder why he made them parallel...
+
+Now let's get a look at that pixel cloud. 
+
+```{r}
+pixcnc <- nc_open("../../riverobs-data/uncertainty_example/pixel_cloud.nc")
+pixcvars <- names(pixcnc$var)
+pixcvars
+
+getvars <- c("latitude", "longitude", "height")
+
+pixclist <- getvars %>% 
+  map(~paste0("pixel_cloud/", .)) %>% 
+  map(~ncvar_get(nc = pixcnc, varid = .)) %>% 
+  setNames(getvars)
+
+pixcdf <- as.data.frame(pixclist) %>% 
+  na.omit() %>% 
+  mutate(longitude = longitude - 360) %>% 
+  st_as_sf(coords = c("longitude", "latitude"))
+
+nc_close(pixcnc)
+```
+
+Make it talk.
+
+```{r}
+glimpse(pixcdf)
+
+pixcdf_sset <- pixcdf %>% 
+  sample_n(500)
+
+ 
+leaflet() %>% 
+  addTiles() %>%
+  addCircleMarkers(radius = 1, data = pixcdf_sset) %>%
+  addPolylines(color = "red", data = rivers_sf)
+
+map1 %>% 
+  addCircleMarkers(radius = 1, data = pixcdf_sset)
+```
+
+Next I should play around with Brent's new files for aggregating. This is a good opportunity to use reticulate. 
+
+```{r}
+swat <- import("SWOTRiver")
+py_help("simple")
+```
 
