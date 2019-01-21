@@ -1,0 +1,45 @@
+---
+title: "notebook20190114"
+author: "Mark Hagemann"
+date: "January 14, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Using the reticulate package to test out SWOTWater aggregation functions.
+
+```{r}
+use_condaenv("RiverObs", required = TRUE)
+
+water <- import("SWOTWater")
+length(water)
+
+str(water)
+
+water$aggregate$area_only()
+```
+
+I know I need to use the `SWOTWater` module, but how that works with reticulate is unclear
+
+Let's get some nodes and/or reaches from the toy case. 
+
+```{r}
+river <- import("SWOTRiver")
+
+river$SWOTRiverEstimator(swotL2_file = )
+```
+
+Try in a python chunk.
+
+```{python}
+import SWOTRiver as sriver
+```
+
+Again, library issues with reticulate that aren't there with "native" conda. 
+
+Working now with a standalone script. But I need to supply the arguments expected by the functions. Hang on, no use working with an outdated version. Update my RiverObs environment. OK, DONE. 
+
+

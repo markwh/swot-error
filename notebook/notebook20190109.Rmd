@@ -135,6 +135,8 @@ Next I should play around with Brent's new files for aggregating. This is a good
 
 ```{r}
 swat <- import("SWOTRiver")
+water <- import("SWOTWater")
+
 py_help("simple")
 ```
 
