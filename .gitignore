@@ -6,3 +6,5 @@ data
 *.png
 *cache
 riverobs-output
+*.html
+

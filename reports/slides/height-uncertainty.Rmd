@@ -1,0 +1,33 @@
+---
+title: "Quantifying SWOT Height Uncertainty"
+author: "Mark Hagemann"
+date: "January 28, 2019"
+output: 
+  ioslides_presentation:
+    incremental: true
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+opts_chunk$set(echo = FALSE)
+```
+
+## Presentation Outline
+
+1. Context: SWOT height measurement
+2. Problem: uncertainty quantification
+3. Approaches
+4. Empirical results
+
+## **Context**: Height Measurement
+
+### inSAR trigonometry
+
+```{r}
+include_graphics("fig/insar-triang.png", dpi = 150)
+```
+
+```{r}
+include_graphics()
+```
+
