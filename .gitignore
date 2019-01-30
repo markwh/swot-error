@@ -4,6 +4,7 @@
 .Ruserdata
 data
 *.png
+*.gif
 *cache
 riverobs-output
 *.html
