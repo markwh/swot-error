@@ -1,0 +1,254 @@
+---
+title: "notebook20190128"
+author: "Mark Hagemann"
+date: "January 28, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Working on getting some netcdfs plotted. I'm using [iris](https://scitools.org.uk/iris/docs/latest/). See also my daily work journal for today. 
+
+Just added iris to my RiverObs conda environment.
+
+```{r}
+use_condaenv("RiverObs", required = TRUE)
+
+conda_list()
+
+list.files("../../river")
+```
+
+
+```{python}
+# import iris
+import os
+import numpy as np
+
+datadir = "../data/uncertainty_example/"
+filename = datadir + "pixel_cloud.nc"
+
+# os.listdir(datadir)
+```
+
+```{python}
+cube1 = iris.load_cube(filename, "classification")
+raw1 = iris.load_raw(filename)
+raw1.extract(constraints= "classification")
+# cube1.name()
+
+```
+
+"No cubes found". I wonder if the netcdfs I have aren't in the right format?
+
+
+```{python}
+cubes = iris._generate_cubes(filename, callback = None, constraints=None)
+result = iris.cube._CubeFilterCollection.from_cubes(cubes, constraints=None)
+result.cubes()
+```
+
+Well that's where I'll have to leave it for now. Come back to this later tonight. 
+
+
+Punting on iris for now. Try just with netcdf4
+
+```{python}
+import netCDF4 as nc4
+
+f = nc4.Dataset(filename)
+f.enumtypes.keys()
+f.variables.items()
+# f.ncattrs()
+f_dims = [dim for dim in f.dimensions]
+f_dims
+# f.close()
+```
+
+Maybe there's something wrong with the toy netcdf from Brent.
+
+```{python}
+fname2 = "D:/data/sac-simulator-output/tile-Sac-23Jan2019/tile-Sac-23Jan2019/pixel_cloud.nc"
+f2 = nc4.Dataset(fname2)
+f2.dimensions.keys()
+```
+
+No, it would seem that the updated pixc doesn't have those either. 
+
+Looking through the RiverObs code, I see that I need to specify the group:
+
+```{python}
+f2.groups.keys()
+f2pixc = f2.groups['pixel_cloud']
+f2pixc.dimensions
+```
+
+OK--try again with iris?
+
+```{python}
+cube1 = iris.load_raw(filename)
+# raw1 = iris.load_raw(filename)
+```
+
+Alright, not worth it. 
+
+```{python}
+f1pixc = f.groups["pixel_cloud"]
+f1pixc.variables.keys()
+f1pixc.dimensions.keys()
+f1pixc.dimensions['points']
+f1pixc.dimensions['depth']
+f1pixc.variables["height"][0:99]
+
+```
+
+Alright, that's a start. Next try a random subset of heights. 
+
+```{python}
+import pandas
+
+foo = range(10)
+# np.random.choice(10, 10, replace = False)
+
+randinds = np.random.choice(195152, 1000, replace = False)
+
+
+h_sset = f1pixc.variables["height"][randinds]
+lat_sset = f1pixc.variables["latitude"][randinds]
+lon_sset = f1pixc.variables["longitude"][randinds]
+
+h_array = np.column_stack((h_sset, lat_sset, lon_sset))
+h_df = pandas.DataFrame([['latitude', lat_sset], ['longitude', lon_sset], 
+    ['height', h_sset]])  
+# h_array
+```
+
+I think best to plot this in R. Time to really put reticulate to use!
+
+```{r}
+foo <- py$h_array
+bar <- py$h_df
+class(foo)
+class(bar)
+head(foo)
+head(bar)
+```
+
+
+Just work with the dumb numpy.
+
+```{r}
+h_df <- py$h_array %>% 
+  as.data.frame() %>% 
+  setNames(c("height", "lat", "lon")) %>% 
+  glimpse()
+
+```
+
+Map it.
+
+```{r}
+library(leaflet)
+
+
+
+leaflet(h_df) %>% 
+  addTiles() %>% 
+  addCircleMarkers(radius = 1)
+```
+
+
+Great. That's the workflow I'll go with for now. But the more pressing issue is to get RiverObs running and producing output on the new pixel cloud. 
+
+Good news is that coffee is working (weird feeling coupled with total lack of sleep)
+
+Get a handle on requisite file locations. 
+
+```{r}
+pixc <- "D:/data/sac-simulator-output/tile-Sac-23Jan2019/tile-Sac-23Jan2019/pixel_cloud.nc"
+prior_reach <- "D:/data/SWOT-prior/PriorDistributionFolder/netcdfv2/NA07.nc"
+```
+
+Ugh, which prior netcdf is it? (Good opportunity to streamline visualizing workflow)
+
+```{python}
+ds1 = nc4.Dataset(r.prior_reach)
+rchs1 = ds1.groups['reaches']
+rchs1.variables.keys()
+
+nodes1 = ds1.groups['nodes']
+nnodes = nodes1.dimensions['numb_nodes'].size
+
+randinds = np.random.choice(nnodes, min(nnodes, 1000))
+lon1 = nodes1.variables['x'][randinds]
+lat1 = nodes1.variables['y'][randinds]
+
+arr1 = np.column_stack((lon1, lat1))
+```
+
+
+```{r}
+py$arr1 %>% 
+  as.data.frame() %>% 
+  setNames(c("lon", "lat")) %>% 
+  leaflet() %>% 
+  addTiles() %>% 
+  addCircleMarkers(radius = 1)
+  
+```
+
+That looks like it. See if it matches the pixel cloud.
+
+
+```{python}
+ds2 = nc4.Dataset(r.pixc)
+pixc2 = ds2.groups['pixel_cloud']
+pixc2.variables.keys()
+
+# pixc2.dimensions.keys()
+npix = pixc2.dimensions['points'].size
+# 
+randinds2 = np.random.choice(npix, min(npix, 1000))
+lon2 = pixc2.variables['longitude'][randinds2]
+lat2 = pixc2.variables['latitude'][randinds2]
+
+arr2 = np.column_stack((lon2, lat2))
+```
+
+
+```{r}
+pixc_df <- py$arr2 %>% 
+  as.data.frame() %>% 
+  setNames(c("lon", "lat")) %>% 
+  mutate(lon = lon - 360)
+
+summary(pixc_df)
+
+
+py$arr1 %>%
+  as.data.frame() %>%
+  setNames(c("lon", "lat")) %>%
+  leaflet() %>%
+  addTiles() %>%
+  addCircleMarkers(radius = 1) %>%
+  addCircleMarkers(radius = 1, color = "red", data = pixc_df)
+```
+
+Finally got swot_pixc2rivertile to run, but it errors complaining about being unable to convert a fill value to uint32. I think it's in the node/node_id of the priordb. 
+
+```{python}
+priorfile = "D:/data/SWOT-prior/PriorDistributionFolder/netcdfv2/NA07.nc"
+f = nc4.Dataset(priorfile)
+
+np.max(f.groups['nodes'].variables['node_id'])
+
+f.close()
+```
+
+OK, not there. (I'm looking for a `fill_value -9990000000.0`)
+
+I see now, (shift+ctrl+F) FILL_VALUE is set as -9.99e9 in products/netcdf.py.
+
+Fixed that. And now set up PYTHONPATH as a (user) environment variable so I no longer have to use the .bat file. Also made a script to set file location environment variables for use locally in swot-error project. Still getting warnings, and latest error is "Exception: number of good points: 0 smaller than required: 100". But that's a problem for another time. 
