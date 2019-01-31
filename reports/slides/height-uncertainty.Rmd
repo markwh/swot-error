@@ -22,7 +22,16 @@ library(ggplot2)
 3. Approaches
 4. Empirical results
 
-## **Context**: Height Measurement
+## **Context**: SWOT Height ~~Measurement~~ Estimation
+
+```{r, eval = FALSE}
+# Clarify some terminology:
+# 
+# - SWOT *measures* phase, range, etc. 
+# - it *estimates* heights, lat/lon, etc. 
+# - Height *measurements* are ground-truth, in-situ or similar.
+# - *True / Actual* height is a metaphysical construct. Or it's a GDEM (for the purposes of validation). 
+```
 
 ## inSAR trigonometry
 
@@ -120,7 +129,7 @@ include_graphics("fig/histogram-pdf.gif")
 
 ## Quantifying ***Error***
 
-Error = predicted - measured (or vice versa--**residual error**)
+Error = measured - true (or vice versa--**residual error**)
 
 - **Probability distribution (PDF)** --> ***Histogram***
     - Hypothesis test for similarity of distributions
@@ -140,18 +149,30 @@ Consider multiple predictions and measurements in space and/or time.
 
 ## Components of ***Error***: Bias and variance
 
-```{r}
-set.seed(14298)
-data.frame(e = rnorm(100)) %>% 
-  mutate(e = (as.vector(scale(e)) + 1) / 2) %>% 
+Consider the errors in this histogram:
+
+```{r, fig.width = 4, fig.height = 3, fig.align="right", fig}
+set.seed(142981)
+
+histdf <- data.frame(e = rnorm(100)) %>% 
+    mutate(e = (as.vector(scale(e)) + 1) / 2)
+
+# sd(histdf$e)
+
+histdf %>% 
   ggplot(aes(x = e)) + 
   geom_histogram(aes(y = ..density..), binwidth = 0.5, color = "gray80") +
   xlab("e = pred - meas") +
   geom_rug() +
+  geom_vline(xintercept = c(0, 0.5), color = c("black", "red")) +
   theme_bw()
 ```
 
-
+- Mean error is 0.5 
+    - ***Bias***
+- Standard deviation (SD) of error is 0.5
+    - Variance: $Var = SD^2$
+- $RMSE = Bias^2 + Var = 0.75 \mathbf{> 0.5}$
 
 ## Effects of correlation
 
@@ -162,5 +183,62 @@ Strongly correlated errors appear biased when zoomed in
 
 
 
-## Back to SWOT error budget
+## Back to SWOT height error budget
 
+- 10 cm (1-$\sigma$) requirement for an area of 1 $km^2$
+- 8.9 cm from KaRIn errors (79% of allowed variance)
+    - **4.4 cm random (24% of KaRIn error variance)** 
+        - most of this is **phase error**
+    - Most of the rest is cross-track systematic error (7.4 cm = 69% variance) 
+- Most of the rest is Wet Troposphere (4.0 cm = 16% of variance)
+
+## Phase error
+
+- (lat, lon, height) = g(phase, range, doppler)
+
+```{r}
+include_graphics("fig/insar-phase-err.png")
+```
+
+## Phase ($\phi$) error
+
+$e_\phi = \hat{\phi} - \phi_{real}$
+
+- (lat, lon, height) <---> (phase, range, doppler)
+- Related to *coherence* ($\gamma$) of radar signals between antennas.
+    - How much is radar pulse scattered by (water) surface, atmosphere?
+- Related to *number of looks*, $N_l$ over which phase measurement is averaged
+- Lower bound on *variance of $e_\phi$*: 
+    - $\sigma^2_{e_\phi} = \frac{1}{2 N_l} \frac{1 - \gamma^2}{\gamma^2}$
+    - **This is an approximation** 
+
+## Height error at pixel scale
+
+At small scales, phase to height conversion is approximately linear:
+
+- $\frac{\partial h}{\partial \phi} \approx d_h$
+    - $d_h$ from simple trigonometry
+- So $\sigma_{e_h} = d_h \sigma_{e_\phi}$
+
+## Aggregating heights
+
+- *Multilooking*: each pixel averages measurements (phase, etc.) from multiple *looks*
+
+```{r}
+include_graphics("fig/vesuvius-multilook.png")
+```
+
+
+## Height error at feature scale (1st way)
+
+Conversion from phase error
+
+- Estimate phase error uncertainty
+- Aggregate to feature scale
+- Convert to height error
+
+## Height error at feature scale (2nd way)
+
+- Estimate phase 
+- Convert to height
+- Compute measurement 
