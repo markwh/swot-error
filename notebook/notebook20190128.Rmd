@@ -73,6 +73,13 @@ Maybe there's something wrong with the toy netcdf from Brent.
 fname2 = "D:/data/sac-simulator-output/tile-Sac-23Jan2019/tile-Sac-23Jan2019/pixel_cloud.nc"
 f2 = nc4.Dataset(fname2)
 f2.dimensions.keys()
+
+# foo = f2.groups["pixel_cloud"].variables["latitude"]
+foo = f2.groups["pixel_cloud"].variables["longitude"]
+
+np.nanmin(foo)
+np.nanmax(foo)
+
 ```
 
 No, it would seem that the updated pixc doesn't have those either. 
