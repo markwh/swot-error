@@ -1,0 +1,349 @@
+---
+title: "notebook20190204"
+author: "Mark Hagemann"
+date: "2/4/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+Working with netcdf output from running RiverObs scripts. 
+
+I brainstormed some validations to do in today's work journal. Start with reach scale. 
+
+```{r}
+sac_rt <- nc_open("../output/out_rt.nc") # rivertile netcdf from Sac Pixc
+
+# sac_rt$groups[[3]]
+# sac_rt$dim$`reaches/reaches`
+sac_rt$var$`nodes/time`$units
+
+sacvars <- names(sac_rt$var)
+# sacvars
+reachvars <- sacvars[grepl("^reaches/", sacvars)]
+reachvars <- reachvars[!grepl("rch_id_", reachvars, fixed = TRUE)] # matrices/I don't need these
+reachvars_short <- splitPiece(reachvars, "/", 2, fixed = TRUE)
+
+reachvals_list <- reachvars %>% 
+  map(~as.vector(ncvar_get(nc = sac_rt, varid = .))) %>% 
+  setNames(reachvars_short)
+
+nacols <- map_lgl(reachvals_list, ~(sum(!is.na(.)) == 0))
+
+reachvals_df <- as.data.frame(reachvals_list)[, !nacols]
+
+nc_close(sac_rt)
+```
+
+
+```{r}
+glimpse(reachvals_df)
+```
+
+```{r}
+library(leaflet)
+
+leaflet(reachvals_df) %>% 
+  addTiles() %>% 
+  addCircleMarkers(lng = ~p_longitud, lat = ~p_latitud, radius = 2)
+```
+
+Fine. Next, do nodes. 
+
+```{r}
+sac_rt <- nc_open("../output/out_rt.nc") # rivertile netcdf from Sac Pixc
+
+# sac_rt$groups[[3]]
+# sac_rt$dim$`reaches/reaches`
+
+sacvars <- names(sac_rt$var)
+# sacvars
+nodevars <- sacvars[grepl("^nodes/", sacvars)]
+
+nodevars_short <- splitPiece(nodevars, "/", 2, fixed = TRUE)
+
+nodevals_list <- nodevars %>% 
+  map(~as.vector(ncvar_get(nc = sac_rt, varid = .))) %>% 
+  setNames(nodevars_short)
+
+# map_int(nodevals_list, ~length(.)) %>% sort()
+
+nacols <- map_lgl(nodevals_list, ~(sum(!is.na(.)) == 0))
+
+nodevals_df <- as.data.frame(nodevals_list)[, !nacols]
+
+nc_close(sac_rt)
+```
+
+```{r}
+glimpse(nodevals_df)
+```
+
+```{r}
+leaflet(nodevals_df) %>% 
+  addTiles() %>% 
+  addCircleMarkers(lng = ~longitude, lat = ~latitude, radius = 2)
+```
+
+
+Next get a truth for node level
+
+```{r}
+sac_rt <- nc_open("../output/gdemrt.nc") # rivertile netcdf from Sac Pixc
+
+# sac_rt$groups[[3]]
+# sac_rt$dim$`reaches/reaches`
+
+sacvars <- names(sac_rt$var)
+# sacvars
+nodevars <- sacvars[grepl("^nodes/", sacvars)]
+
+nodevars_short <- splitPiece(nodevars, "/", 2, fixed = TRUE)
+
+nodetruth_list <- nodevars %>% 
+  map(~as.vector(ncvar_get(nc = sac_rt, varid = .))) %>% 
+  setNames(nodevars_short)
+
+# map_int(nodetruth_list, ~length(.)) %>% sort()
+
+nacols <- map_lgl(nodetruth_list, ~(sum(!is.na(.)) == 0))
+
+nodetruth_df <- as.data.frame(nodetruth_list)[, !nacols]
+
+nc_close(sac_rt)
+```
+
+
+Compare vals to truth
+
+```{r}
+dim(nodetruth_df)
+dim(nodevals_df)
+
+glimpse(nodevals_df)
+
+
+```
+
+See which node_id's are missing from the different outputs.
+
+```{r}
+
+valmisslocs <- setdiff(nodetruth_df$node_id, nodevals_df$node_id)
+trumisslocs <- setdiff(nodevals_df$node_id, nodetruth_df$node_id)
+
+leaflet(nodevals_df) %>% 
+  addTiles() %>% 
+  addCircleMarkers(lng = ~longitude, lat = ~latitude, radius = 2, color = "blue") %>% 
+  addCircleMarkers(data = filter(nodevals_df, node_id %in% trumisslocs), 
+                   color = "blue") %>% 
+  addCircleMarkers(data = filter(nodetruth_df, node_id %in% valmisslocs),
+                   color = "red")
+  
+```
+
+
+OK, pixc is just missing nodes at the end. 
+
+Next do that comparison. What variables do I want?
+
+```{r}
+glimpse(nodevals_df)
+keepvars <- c("node_id", "time", "latitude", "longitude", 
+              "latitude_u", "longitud_u", "height", "height_u", 
+              "width", "width_u", "area_detct", "area_det_u", 
+              "area_total", "area_tot_u", "area_of_ht", "n_good_pix")
+
+# This one just for truth comparison (i.e. vars to validate)
+glimpse(nodetruth_df)
+keepvars_tru <- c("node_id", "time", "latitude", "longitude", 
+              "height", "width", "area_detct", "area_total", "area_of_ht")
+```
+
+
+
+```{r}
+node_df <- nodevals_df[keepvars] %>% 
+  mutate(time = round(time, digits = -3)) %>% 
+  full_join(mutate(nodetruth_df[keepvars_tru], 
+                   time = round(time, digits = -3)),
+            by = c("node_id", "time"))
+
+glimpse(node_df)
+
+node_df %>% 
+  filter(!(node_id %in% valmisslocs), 
+         !(node_id %in% trumisslocs)) %>% 
+  glimpse()
+```
+
+
+Make some plots.
+
+```{r}
+valdf_node %>% 
+  ggplot(aes(x = h_err_scale)) + 
+  geom_histogram()
+
+valdf_node %>% 
+  ggplot(aes(x = lat_err_scale)) + 
+  geom_histogram() +
+  xlim(-500, 500)
+
+valdf_node %>% 
+  ggplot(aes(x = lon_err_scale)) + 
+  # xlim(-50, 50) +
+  coord_cartesian(
+    # xlim = c(-20, 20)
+    xlim = c(-50, 50)
+  ) +
+  geom_histogram(
+    # binwidth = 2.5
+    binwidth = 5
+  )
+```
+
+I'd love a plot of errors versus sensitivity, but I don't have sensitivity at feature scale. For now think about how to do error comparison more systematically. Start with a better data structure:
+
+```{r}
+errdf_node <- node_df %>% 
+  transmute(node_id, time,
+            h = (height.x - height.y),
+            w = width.x - width.y,
+            adet = area_detct.x - area_detct.y,
+            atot = area_total.x - area_total.y,
+            lat = latitude.x - latitude.y,
+            lon = longitude.x - longitude.y)
+
+uncdf_node <- node_df %>% 
+  transmute(node_id, time,
+            h = height_u,
+            w = width_u,
+            adet = area_det_u,
+            atot = area_tot_u,
+            lat = latitude_u,
+            lon = longitud_u)
+
+relerrdf_node <- (errdf_node / uncdf_node) %>% 
+  mutate(node_id = errdf_node$node_id,
+         time = errdf_node$time) %>% 
+  gather(key = "variable", value = "value", -node_id, -time) %>%
+  glimpse()
+  
+
+```
+
+
+Now I can quickly plot:
+
+```{r}
+relerrdf_node %>% 
+  filter(abs(value) < 100) %>% 
+  ggplot(aes(x = value)) + 
+  geom_histogram() + 
+  facet_wrap(~variable, scales = "free")
+```
+
+I like that. I think it's a good first-level plot. I can think of things to parse out from this and compare, but leave that for now. Actually, real quick, add a non-rleative error plot. 
+
+```{r}
+errdf_node %>% 
+  gather(key = "variable", value = "value", -node_id, -time) %>%
+  # glimpse() %>% 
+  ggplot(aes(x = value)) + 
+  geom_histogram() + 
+  facet_wrap(~variable, scales = "free")
+  
+```
+
+Next I want to see if I can get error bars to show up in a leaflet plot. This would mean using polylines. How to specify those in a data.frame?
+
+- I may need to use sf package and have a geometry column. Try it out!
+
+```{r}
+library(sf)
+
+linegeom <- nodevals_df %>% 
+  dplyr::select(reach_id:height_u) %>% 
+  mutate(lat_min = latitude - 2 *latitude_u,
+         lat_max = latitude + 2 *latitude_u,
+         lon_min = longitude - 2 * longitud_u,
+         lon_max = longitude + 2 *longitud_u) %>% 
+  split(f = 1:nrow(.)) %>% 
+  map(~st_multilinestring(
+    list(matrix(c(.$longitude, .$lon_max, .$longitude, .$lon_min, 
+             .$longitude, .$lat_max, .$latitude, .$lat_min, 
+             .$latitude, .$lat_max
+             ), ncol = 2, byrow = FALSE)))) %>% 
+  st_sfc()
+
+nodevals_sf <- nodevals_df %>% 
+  mutate(geometry = linegeom) %>% 
+  st_as_sf()
+  
+```
+
+Not clear how to do this. And anyway it's almost time for my telecon for uncertainty stuff. Leave as a todo. 
+
+Next plot: scatterplot showing squared error vs. squared uncertainty. Mean shold follow a 1:1 line.
+
+```{r}
+bounddf_node <- list(err = errdf_node, unc = uncdf_node) %>% 
+  bind_rows(.id = "qty") %>% 
+  gather(key = "variable", value = "value", -node_id, -time, -qty) %>% 
+  spread(key = "qty", value = "value") %>% 
+  na.omit()
+
+bounddf_node %>% 
+  ggplot(aes(x = unc^2, y = err^2)) + 
+  geom_point() + 
+  facet_wrap(~variable, scales = "free") + 
+  scale_x_log10() + scale_y_log10() + 
+  geom_abline(slope = 1, intercept = 0)
+```
+
+Looks like lat and lon are not being treated right. The others are too good--we should be looking at a random quantity; these look deterministic. Could that just be the impact of log space? I think not. 
+
+- What's up with the low outlier in height? Both uncertainty and error are super low. 
+
+
+Now more practice with sf.Editing the chunk above. Here's from the st_as_sf help page. 
+
+```{r}
+pt1 = st_point(c(0,1))
+pt2 = st_point(c(1,1))
+st_sfc(pt1, pt2)
+d = data.frame(a = 1:2)
+d$geom = st_sfc(pt1, pt2)
+df = st_as_sf(d)
+d$geom = c("POINT(0 0)", "POINT(0 1)")
+df = st_as_sf(d, wkt = "geom")
+d$geom2 = st_sfc(pt1, pt2)
+st_as_sf(d) # should warn
+data(meuse, package = "sp")
+meuse_sf = st_as_sf(meuse, coords = c("x", "y"), crs = 28992, agr = "constant")
+```
+
+
+OK, I've got something working (I think). See if leaflet can handle it.
+
+```{r}
+leaflet() %>% 
+  addTiles() %>% 
+  # addCircleMarkers(radius = 3, data = nodevals_df) %>%
+  addPolylines(stroke = 1, data = nodevals_sf[1:2, ], color = "red")
+
+
+
+sf::as_Spatial(linegeom[1:2]) %>% plot()
+  leaflet() %>% 
+# leaflet(linegeom) %>% 
+  addPolylines(weight = 0.1)
+```
+
+
+Not clear why that's not plotting. Anyway, it's time to switch gears. 
+

@@ -74,12 +74,21 @@ fname2 = "D:/data/sac-simulator-output/tile-Sac-23Jan2019/tile-Sac-23Jan2019/pix
 f2 = nc4.Dataset(fname2)
 f2.dimensions.keys()
 
-# foo = f2.groups["pixel_cloud"].variables["latitude"]
 foo = f2.groups["pixel_cloud"].variables["longitude"]
+bar = f2.groups["pixel_cloud"].variables["latitude"]
 
 np.nanmin(foo)
+np.min(foo)
+np.max(foo)
 np.nanmax(foo)
 
+np.min(bar)
+np.max(bar)
+# np.argwhere(np.isnan(bar))
+
+# foo[12575:12585]
+# bar[12575:12585]
+foo.min()
 ```
 
 No, it would seem that the updated pixc doesn't have those either. 
