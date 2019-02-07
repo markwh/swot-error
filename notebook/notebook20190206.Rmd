@@ -1,0 +1,162 @@
+---
+title: "notebook20190206"
+author: "Mark Hagemann"
+date: "2/4/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+library(ncdf4)
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(purrr)
+
+opts_chunk$set(echo = TRUE)
+
+splitPiece <- function (strvec, split, piece, ...) {
+  spl <- strsplit(strvec, split = split, ...)
+  out <- vapply(spl, `[`, character(1), piece)
+  out
+}
+
+
+```
+
+
+This is modified from a copy-paste of 20190204 notebook. The difference is that I've regenerated the output using fixed (?) uncertainty aggregation. 
+
+```{r}
+ncdir = "../output/sac01"
+```
+
+
+Fine. Next, do nodes. 
+
+```{r}
+sac_rt <- nc_open(sprintf("%s/rt.nc", ncdir)) # rivertile netcdf from Sac Pixc
+
+# sac_rt$groups[[3]]
+# sac_rt$dim$`reaches/reaches`
+
+sacvars <- names(sac_rt$var)
+# sacvars
+nodevars <- sacvars[grepl("^nodes/", sacvars)]
+
+nodevars_short <- splitPiece(nodevars, "/", 2, fixed = TRUE)
+
+nodevals_list <- nodevars %>% 
+  map(~as.vector(ncvar_get(nc = sac_rt, varid = .))) %>% 
+  setNames(nodevars_short)
+
+
+nacols <- map_lgl(nodevals_list, ~(sum(!is.na(.)) == 0))
+
+nodevals_df <- as.data.frame(nodevals_list)[, !nacols]
+
+nc_close(sac_rt)
+```
+
+Next get a truth for node level
+
+```{r}
+sac_rt <- nc_open(sprintf("%s/rt_gdem.nc", ncdir)) # rivertile netcdf from Sac gdem
+
+sacvars <- names(sac_rt$var)
+# sacvars
+nodevars <- sacvars[grepl("^nodes/", sacvars)]
+
+nodevars_short <- splitPiece(nodevars, "/", 2, fixed = TRUE)
+
+nodetruth_list <- nodevars %>% 
+  map(~as.vector(ncvar_get(nc = sac_rt, varid = .))) %>% 
+  setNames(nodevars_short)
+
+
+nacols <- map_lgl(nodetruth_list, ~(sum(!is.na(.)) == 0))
+
+nodetruth_df <- as.data.frame(nodetruth_list)[, !nacols]
+
+nc_close(sac_rt)
+```
+
+
+Next do that comparison. What variables do I want?
+
+```{r}
+
+keepvars <- c("node_id", "time", "latitude", "longitude", 
+              "latitude_u", "longitud_u", "height", "height_u", 
+              "width", "width_u", "area_detct", "area_det_u", 
+              "area_total", "area_tot_u", "area_of_ht", "n_good_pix")
+
+# This one just for truth comparison (i.e. vars to validate)
+keepvars_tru <- c("node_id", "time", "latitude", "longitude", 
+              "height", "width", "area_detct", "area_total", "area_of_ht")
+```
+
+
+
+```{r}
+node_df <- nodevals_df[keepvars] %>% 
+  mutate(time = round(time, digits = -3)) %>% 
+  full_join(mutate(nodetruth_df[keepvars_tru], 
+                   time = round(time, digits = -3)),
+            by = c("node_id", "time"))
+```
+
+
+I'd love a plot of errors versus sensitivity, but I don't have sensitivity at feature scale. For now think about how to do error comparison more systematically. Start with a better data structure:
+
+```{r}
+errdf_node <- node_df %>% 
+  transmute(node_id, time,
+            h = (height.x - height.y),
+            w = width.x - width.y,
+            adet = area_detct.x - area_detct.y,
+            atot = area_total.x - area_total.y,
+            lat = latitude.x - latitude.y,
+            lon = longitude.x - longitude.y)
+
+uncdf_node <- node_df %>% 
+  transmute(node_id, time,
+            h = height_u,
+            w = width_u,
+            adet = area_det_u,
+            atot = area_tot_u,
+            lat = latitude_u,
+            lon = longitud_u)
+
+relerrdf_node <- (errdf_node / uncdf_node) %>% 
+  mutate(node_id = errdf_node$node_id,
+         time = errdf_node$time) %>% 
+  gather(key = "variable", value = "value", -node_id, -time)
+
+```
+
+
+Now I can quickly plot:
+
+```{r}
+relerrdf_node %>% 
+  filter(abs(value) < 100) %>% 
+  ggplot(aes(x = value)) + 
+  geom_histogram() + 
+  facet_wrap(~variable, scales = "free")
+```
+
+I like that. I think it's a good first-level plot. I can think of things to parse out from this and compare, but leave that for now. Actually, real quick, add a non-rleative error plot. 
+
+```{r}
+errdf_node %>% 
+  gather(key = "variable", value = "value", -node_id, -time) %>%
+  # glimpse() %>% 
+  ggplot(aes(x = value)) + 
+  geom_histogram() + 
+  facet_wrap(~variable, scales = "free")
+  
+```
+
+
+Now I'll work on some standalone Rmd documents for different facets of error validation. Start with maps. 
