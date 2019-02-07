@@ -1,0 +1,29 @@
+---
+title: "notebook20190207"
+author: "Mark Hagemann"
+date: "2/7/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Working on rivertile functions.
+
+I already have `rt_read()`:
+
+```{r}
+foo <- rt_read(ncfile = "../output/sac01/out_rt.nc")
+
+glimpse(foo)
+```
+
+Got a validation funciton now too. 
+
+```{r}
+bar <- rt_valdata(dir = "../output/sac01/", group = "nodes", keep_na_vars = TRUE)
+
+glimpse(bar)
+```
+

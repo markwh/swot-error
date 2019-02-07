@@ -1,0 +1,55 @@
+---
+title: "val-spatial"
+author: "Mark Hagemann"
+date: "2/7/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+library(leaflet)
+opts_chunk$set(echo = TRUE)
+opts_knit$set(root.dir = "~/Documents/swot-error/")
+```
+
+```{r}
+# read in node data
+
+valdata <- rt_valdata("output/sac01", group = "nodes")
+```
+
+Profile of height errors, showing error bars
+
+```{r}
+glimpse(valdata)
+```
+
+
+Spatial representations of errors, uncertainty estimates
+
+```{r}
+valdata %>% 
+  dplyr::filter(variable == "height") %>% 
+  ggplot(aes(x = node_id)) +
+  geom_ribbon(aes(ymin = pixc_val - 1.96 * sigma_est, 
+                  ymax = pixc_val + 1.96 * sigma_est), 
+              fill = "gray80") +
+  geom_ribbon(aes(ymin = pixc_val - sigma_est, 
+                  ymax = pixc_val + sigma_est), 
+              fill = "gray60") +
+  geom_point(aes(y = pixc_val), shape = "+") +
+  geom_line(aes(y = gdem_val), color = "black") +
+  theme_bw()
+
+
+valdata %>% 
+  dplyr::filter(variable == "height") %>% 
+  ggplot(aes(x = node_id)) +
+  geom_ribbon(aes(ymin = -1.96 * sigma_est, 
+                  ymax = 1.96 * sigma_est), fill = "pink") +
+  geom_ribbon(aes(ymin = -sigma_est, 
+                  ymax = sigma_est), fill = "red") +
+  geom_point(aes(y = pixc_err)) +
+  theme_bw()
+```
+
