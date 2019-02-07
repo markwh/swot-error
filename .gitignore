@@ -9,3 +9,5 @@ data
 riverobs-output
 *.html
 *.nc
+output
+

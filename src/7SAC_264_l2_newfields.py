@@ -11,8 +11,6 @@ data_dir = '/home/markwh/Documents/riverobs-data/'
 
 # width_db_file=join(db_directory,'SAC_width_db_whole.h5')
 
-
-
 shape_file_root = data_dir + 'Sacramento-NodeDatabase/Sacramento-NodeDatabase'
 centerline_root = data_dir + 'Sacramento-ReachDatabase/Sacramento-ReachDatabase'
 

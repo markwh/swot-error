@@ -338,7 +338,7 @@ leaflet() %>%
 
 
 
-sf::as_Spatial(linegeom[1:2]) %>% plot()
+sf::as_Spatial(linegeom[1:2]) %>%  #plot()
   leaflet() %>% 
 # leaflet(linegeom) %>% 
   addPolylines(weight = 0.1)
