@@ -1,0 +1,152 @@
+---
+title: "Sacramento Error Validation"
+author: "Mark Hagemann"
+date: "2/8/2019"
+output: ioslides_presentation
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+library(leaflet)
+opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+opts_knit$set(root.dir = "~/Documents/swot-error/")
+```
+
+```{r}
+library(ProjectTemplate)
+load.project()
+valdata <- rt_valdata("output/sac01", group = "nodes")
+
+valdata <- valdata %>% dplyr::filter(node_id != 3249122) %>% 
+  dplyr::select(reach_id:sigma_est)
+
+```
+
+
+## Dataset
+
+- RiverObs gives measurements with $1-\sigma$ uncertainty for
+    - height
+    - width 
+    - lat, lon
+    - area (detected, total)
+- All this at node scale
+
+## Error histograms (pixc - gdem)
+
+```{r}
+valdata %>% 
+  ggplot(aes(x = pixc_err)) +
+  geom_histogram() +
+  facet_wrap(~variable, scales = "free")
+```
+
+
+## Relative Error histograms (pixc - gdem) / sigma
+
+Adjusting relative to estimated uncertainty stdev should produce distribution with stdev=1
+
+```{r}
+valdata %>% 
+  ggplot(aes(x = pixc_err / sigma_est)) +
+  geom_histogram() +
+  facet_wrap(~variable, scales = "free")
+```
+
+## Relative error with bias removed
+
+Uncertainty estimates don't account for bias/long-wavelength error, validate against bias-adjusted errors. 
+
+```{r}
+valdata %>% 
+  group_by(variable) %>% 
+  mutate(pixc_err_adj = pixc_err - mean(pixc_err, na.rm = TRUE)) %>% 
+  ungroup() %>% 
+  dplyr::filter(abs(pixc_err_adj / sigma_est) < 125) %>% 
+  # dplyr::filter(variable == "height") %>%
+  # arrange(pixc_err_adj)
+  ggplot(aes(x = pixc_err_adj / sigma_est)) +
+  geom_histogram(aes(y = ..density..)) +
+  facet_wrap(~variable, scales = "free")
+```
+
+## Relative error with bias removed
+
+Compare to standard normal distribution
+
+```{r}
+valdata %>% 
+  group_by(variable) %>% 
+  mutate(pixc_err_adj = pixc_err - mean(pixc_err, na.rm = TRUE)) %>% 
+  ungroup() %>% 
+  dplyr::filter(abs(pixc_err_adj / sigma_est) < 125) %>% 
+  # dplyr::filter(variable == "height") %>%
+  # arrange(pixc_err_adj)
+  ggplot(aes(x = pixc_err_adj / sigma_est)) +
+  geom_histogram(aes(y = ..density..)) +
+  facet_wrap(~variable, scales = "free") +
+  stat_function(fun = dnorm, args = list(mean = 0, sd = 1), color = "blue")
+
+```
+
+## Conclusions:
+
+- Height error uncertainty is pretty spot-on (not counting "systematic" errors)
+- Other variables' uncertainty estimates are too low
+- Latitude and longitude errors point to non-phase-related errors
+    - time mismatch between gdem and pixc? 
+
+## Heights by node
+
+blue: 1-sigma; pink: 95% confidence interval
+
+```{r}
+valdata %>% 
+  dplyr::filter(variable == "height") %>% 
+  ggplot(aes(x = node_id)) +
+  geom_ribbon(aes(ymin = pixc_val - 1.96 * sigma_est, 
+                  ymax = pixc_val + 1.96 * sigma_est), 
+              fill = "pink") +
+  geom_ribbon(aes(ymin = pixc_val - sigma_est, 
+                  ymax = pixc_val + sigma_est), 
+              fill = "#7780ff") +
+  geom_point(aes(y = pixc_val), shape = "+") +
+  geom_line(aes(y = gdem_val), color = "black") +
+  theme_bw()
+```
+
+## Height errors by node
+
+blue: 1-sigma; pink: 95% confidence interval
+
+```{r}
+valdata %>% 
+  dplyr::filter(variable == "height") %>% 
+  ggplot(aes(x = node_id)) +
+  geom_ribbon(aes(ymin = -1.96 * sigma_est, 
+                  ymax = 1.96 * sigma_est), fill = "pink") +
+  geom_ribbon(aes(ymin = -sigma_est, 
+                  ymax = sigma_est), fill = "#7780ff") +
+  geom_point(aes(y = pixc_err)) +
+  theme_bw()
+```
+
+## Bias-adjusted height errors by node
+
+blue: 1-sigma; pink: 95% confidence interval
+
+```{r}
+
+valdata %>% 
+  dplyr::filter(variable == "height") %>% 
+  mutate(err_shift = pixc_err - median(pixc_err, na.rm = TRUE)) %>% 
+  ggplot(aes(x = node_id)) +
+  geom_ribbon(aes(ymin = -1.96 * sigma_est, 
+                  ymax = 1.96 * sigma_est), fill = "pink") +
+  geom_ribbon(aes(ymin = -sigma_est, 
+                  ymax = sigma_est), fill = "#7780ff") +
+  geom_point(aes(y = err_shift)) +
+  theme_bw()
+```
+
+

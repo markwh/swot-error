@@ -1,0 +1,63 @@
+---
+title: "val_hist"
+author: "Mark Hagemann"
+date: "2/8/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+library(leaflet)
+opts_chunk$set(echo = TRUE)
+opts_knit$set(root.dir = "~/Documents/swot-error/")
+```
+
+
+
+```{r}
+valdata <- rt_valdata("output/sac01", group = "nodes")
+valdata %>% 
+  dplyr::filter(variable == "longitude") %>% 
+  arrange(pixc_err)
+
+valdata <- valdata %>% dplyr::filter(node_id != 3249122) %>% 
+  dplyr::select(reach_id:sigma_est)
+  
+
+```
+
+```{r}
+valdata %>% 
+  glimpse() %>% 
+  ggplot(aes(x = pixc_err)) +
+  geom_histogram() +
+  facet_wrap(~variable, scales = "free")
+```
+
+Scaled version
+
+```{r}
+valdata %>% 
+  glimpse() %>% 
+  ggplot(aes(x = pixc_err / sigma_est)) +
+  geom_histogram() +
+  facet_wrap(~variable, scales = "free")
+```
+
+Since we shouldn't be comparing sigma est to bias, do the same for bias removed. 
+
+```{r}
+valdata %>% 
+  group_by(variable) %>% 
+  mutate(pixc_err_adj = pixc_err - mean(pixc_err, na.rm = TRUE)) %>% 
+  ungroup() %>% 
+  dplyr::filter(abs(pixc_err_adj / sigma_est) < 125) %>% 
+  # dplyr::filter(variable == "height") %>%
+  # arrange(pixc_err_adj)
+  ggplot(aes(x = pixc_err_adj / sigma_est)) +
+  geom_histogram(aes(y = ..density..)) +
+  facet_wrap(~variable, scales = "free") +
+  stat_function(fun = dnorm, args = list(mean = 0, sd = 1), color = "blue")
+
+```
+

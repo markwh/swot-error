@@ -33,10 +33,10 @@ valdata %>%
   ggplot(aes(x = node_id)) +
   geom_ribbon(aes(ymin = pixc_val - 1.96 * sigma_est, 
                   ymax = pixc_val + 1.96 * sigma_est), 
-              fill = "gray80") +
+              fill = "pink") +
   geom_ribbon(aes(ymin = pixc_val - sigma_est, 
                   ymax = pixc_val + sigma_est), 
-              fill = "gray60") +
+              fill = "#7780ff") +
   geom_point(aes(y = pixc_val), shape = "+") +
   geom_line(aes(y = gdem_val), color = "black") +
   theme_bw()
@@ -48,8 +48,139 @@ valdata %>%
   geom_ribbon(aes(ymin = -1.96 * sigma_est, 
                   ymax = 1.96 * sigma_est), fill = "pink") +
   geom_ribbon(aes(ymin = -sigma_est, 
-                  ymax = sigma_est), fill = "red") +
+                  ymax = sigma_est), fill = "#7780ff") +
   geom_point(aes(y = pixc_err)) +
+  theme_bw()
+
+
+valdata %>% 
+  dplyr::filter(variable == "height") %>% 
+  mutate(err_shift = pixc_err - median(pixc_err, na.rm = TRUE)) %>% 
+  ggplot(aes(x = node_id)) +
+  geom_ribbon(aes(ymin = -1.96 * sigma_est, 
+                  ymax = 1.96 * sigma_est), fill = "pink") +
+  geom_ribbon(aes(ymin = -sigma_est, 
+                  ymax = sigma_est), fill = "#7780ff") +
+  geom_point(aes(y = err_shift)) +
   theme_bw()
 ```
 
+
+Here's the same for latitude
+
+
+```{r}
+valdata %>% 
+  dplyr::filter(variable == "latitude") %>% 
+  ggplot(aes(x = node_id)) +
+  geom_ribbon(aes(ymin = pixc_val - 1.96 * sigma_est, 
+                  ymax = pixc_val + 1.96 * sigma_est), 
+              fill = "pink") +
+  geom_ribbon(aes(ymin = pixc_val - sigma_est, 
+                  ymax = pixc_val + sigma_est), 
+              fill = "#7780ff") +
+  geom_point(aes(y = pixc_val), shape = "+") +
+  geom_line(aes(y = gdem_val), color = "black") +
+  theme_bw()
+
+
+valdata %>% 
+  dplyr::filter(variable == "latitude") %>% 
+  ggplot(aes(x = node_id)) +
+  geom_ribbon(aes(ymin = -1.96 * sigma_est, 
+                  ymax = 1.96 * sigma_est), fill = "pink") +
+  geom_ribbon(aes(ymin = -sigma_est, 
+                  ymax = sigma_est), fill = "#7780ff") +
+  geom_point(aes(y = pixc_err)) +
+  theme_bw()
+
+
+valdata %>% 
+  dplyr::filter(variable == "latitude") %>% 
+  mutate(err_shift = pixc_err - median(pixc_err, na.rm = TRUE)) %>% 
+  ggplot(aes(x = node_id)) +
+  geom_ribbon(aes(ymin = -1.96 * sigma_est, 
+                  ymax = 1.96 * sigma_est), fill = "pink") +
+  geom_ribbon(aes(ymin = -sigma_est, 
+                  ymax = sigma_est), fill = "#7780ff") +
+  geom_point(aes(y = err_shift)) +
+  theme_bw()
+```
+
+
+And for longitude
+
+
+```{r}
+valdata %>% 
+  dplyr::filter(variable == "longitude") %>% 
+  ggplot(aes(x = node_id)) +
+  geom_ribbon(aes(ymin = pixc_val - 1.96 * sigma_est, 
+                  ymax = pixc_val + 1.96 * sigma_est), 
+              fill = "pink") +
+  geom_ribbon(aes(ymin = pixc_val - sigma_est, 
+                  ymax = pixc_val + sigma_est), 
+              fill = "#7780ff") +
+  geom_point(aes(y = pixc_val), shape = "+") +
+  geom_line(aes(y = gdem_val), color = "black") +
+  theme_bw()
+
+
+valdata %>% 
+  dplyr::filter(variable == "longitude") %>% 
+  ggplot(aes(x = node_id)) +
+  geom_ribbon(aes(ymin = -1.96 * sigma_est, 
+                  ymax = 1.96 * sigma_est), fill = "pink") +
+  geom_ribbon(aes(ymin = -sigma_est, 
+                  ymax = sigma_est), fill = "#7780ff") +
+  geom_point(aes(y = pixc_err)) +
+  theme_bw()
+
+
+valdata %>% 
+  dplyr::filter(variable == "longitude") %>% 
+  mutate(err_shift = pixc_err - median(pixc_err, na.rm = TRUE)) %>% 
+  ggplot(aes(x = node_id)) +
+  geom_ribbon(aes(ymin = -1.96 * sigma_est, 
+                  ymax = 1.96 * sigma_est), fill = "pink") +
+  geom_ribbon(aes(ymin = -sigma_est, 
+                  ymax = sigma_est), fill = "#7780ff") +
+  geom_point(aes(y = err_shift)) +
+  theme_bw()
+```
+
+
+
+Next look at maps of errors. 
+
+```{r}
+valdata %>% 
+  # glimpse() %>%
+  dplyr::select(reach_id, node_id, variable:sigma_est) %>% 
+  dplyr::filter(variable %in% c("latitude", "longitude")) %>% 
+  dplyr::mutate(pixc_max = pixc_val + 1.96 * sigma_est,
+                pixc_min = pixc_val - 1.96 * sigma_est) %>% 
+  dplyr::select(-pixc_err, -sigma_est) %>% 
+  gather(key = "dataset", value = "value", -reach_id:-variable) %>% 
+  dplyr::filter(!is.na(value)) %>% 
+  spread(key = variable, value = value) %>% 
+  st_as_sf(coords = c("longitude", "latitude")) %>% 
+  glimpse() %>% 
+  leaflet() %>% 
+  addTiles() %>% 
+  addCircleMarkers()
+```
+
+
+Do lat/lon errors vary spatially?
+
+```{r}
+valdata %>% 
+  glimpse() %>% 
+  dplyr::filter(variable %in% c("latitude", "longitude")) %>% 
+  ggplot(aes(x = gdem_val, y = pixc_err)) +
+  geom_point() +
+  facet_grid(~variable, scales = "free")
+```
+
+No discernable trend. 
