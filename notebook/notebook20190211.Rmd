@@ -1,0 +1,109 @@
+---
+title: "notebook20190211"
+author: "Mark Hagemann"
+date: "2/11/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+Starting off: track down width errors between pixc and gdem. 
+
+- Is the error the same at reach scale? Yes!
+
+Now check out pixcvec comparison. First make a function for loading that data. DONE (over in lib/netcdf.R)
+
+```{r}
+sac_pcv <- pixcvec_read("../output/sac04/pcv.nc")
+sac_gd_pcv <- pixcvec_read("../output/sac01/pcv_gdem.nc")
+```
+
+
+Leaflet map for a random node
+
+
+```{r}
+library(leaflet) 
+randnode <- sample(unique(sac_pcv$node_index), 1)
+randrch <- sample(unique(sac_pcv$reach_index), 1)
+
+pcv_mapdata <- sac_pcv %>% 
+  # filter(node_index == randnode) %>%
+  filter(reach_index == randrch) %>%
+  rename(lat = latitude_vectorproc, lon = longitude_vectorproc)
+
+pcv_gd_mapdata <- sac_gd_pcv %>% 
+  # filter(node_index == randnode) %>%
+  filter(reach_index == randrch) %>%
+  rename(lat = latitude_vectorproc, lon = longitude_vectorproc)
+
+
+leaflet() %>% 
+  addTiles() %>% 
+  addCircleMarkers(radius = 1, data = pcv_mapdata) %>% 
+  addCircleMarkers(radius = 1, color = "red", data = pcv_gd_mapdata)
+
+
+
+```
+
+
+Check the pixel classes.
+
+```{r}
+pcv_mapdata %>% 
+  glimpse()
+```
+
+
+It would be really helpful if I could just plot a pixc file. Can I? Yes!
+
+```{r}
+sacdir <- "D:/data/sac-simulator-output/tile-Sac-23Jan2019/tile-Sac-23Jan2019/"
+sacpixc <- pixc_read(paste0(sacdir, "pixel_cloud.nc"))
+```
+
+Plot a subset of each class. 
+
+```{r}
+sacpixc %>% 
+  dplyr::filter(classification == 4) %>% 
+  sample_n(1000) %>% 
+  leaflet() %>% 
+  addTiles() %>% 
+  addCircleMarkers(radius = 1)
+```
+
+Here's a single node colored by class
+
+```{r}
+
+latmin <- min(pcv_mapdata$lat, na.rm = TRUE)
+lonmin <- min(pcv_mapdata$lon, na.rm = TRUE)
+latmax <- max(pcv_mapdata$lat, na.rm = TRUE)
+lonmax <- max(pcv_mapdata$lon, na.rm = TRUE)
+
+pal <- colorFactor("Set1", domain = sacpixc$classification)
+
+sacpixc %>% 
+  filter(latitude >= latmin, longitude >= lonmin, 
+         latitude <= latmax, longitude <= lonmax) %>%
+  leaflet() %>% 
+  addTiles() %>% 
+  addCircleMarkers(radius = 1, color = ~pal(classification))
+```
+
+Now trying with a database Rui sent. 
+
+```{r}
+testdb <- pixcvec_read("../output/sac04/pcv.nc")
+```
+
+OK, all of this doesn't matter--I've sorted it out. I'll need to come up with a new set of slides. Work on outlining that. Also some kind of methodology. Perhaps this belongs in a report. 
+
+
+
+

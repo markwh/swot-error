@@ -15,10 +15,10 @@ opts_knit$set(root.dir = "~/Documents/swot-error/")
 ```{r}
 library(ProjectTemplate)
 load.project()
-valdata <- rt_valdata("output/sac01", group = "nodes")
+valdata <- rt_valdata("output/sac04", group = "nodes")
 
-valdata <- valdata %>% dplyr::filter(node_id != 3249122) %>% 
-  dplyr::select(reach_id:sigma_est)
+# valdata <- valdata %>% dplyr::filter(node_id != 3249122) %>% 
+#   dplyr::select(reach_id:sigma_est)
 
 ```
 
@@ -42,7 +42,7 @@ valdata %>%
 ```
 
 
-## Relative Error histograms (pixc - gdem) / sigma
+## Relative Error histograms (err / sigma)
 
 Adjusting relative to estimated uncertainty stdev should produce distribution with stdev=1
 

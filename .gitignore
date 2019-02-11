@@ -10,3 +10,4 @@ riverobs-output
 *.html
 *.nc
 output
+*rsconnect

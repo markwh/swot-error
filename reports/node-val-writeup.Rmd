@@ -1,0 +1,132 @@
+---
+title: "node validation writeup"
+author: "Mark Hagemann"
+date: "2/11/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+library(leaflet)
+opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+opts_knit$set(root.dir = "~/Documents/swot-error/")
+```
+
+```{r}
+library(ProjectTemplate)
+load.project()
+valdata <- rt_valdata("output/sac04", group = "nodes")
+
+# valdata <- valdata %>% dplyr::filter(node_id != 3249122) %>% 
+#   dplyr::select(reach_id:sigma_est)
+
+```
+
+## Motivation
+
+SWOT data products containing estimates of error uncertainty will need to make thes estimates *a priori*, at least at first. This requires some knowledge of the phenomena that lead to imprecision, and a suitable quantificaiton of this imprecision. 
+
+While the true performance of SWOT uncertainty models will be unresolved until actual observations are made from the satellite, we can get some sense of their performance in a controlled range of conditions using simulated pixel cloud data. This report presents a first-cut validation of uncertainty model performance for a single siumulated pixel cloud on the Sacramento River model. 
+
+## Methods
+
+Two rivertile netcdfs were generated using the Sacramento pixel_cloud from the SWOT instrument simulator
+
+## Results
+
+
+
+### Summary statistics
+
+Table #### shows bias, variance, relative bias, and relative standard deviation for all 264 nodes in the rivertile produced by RiverObs.
+
+```{r}
+valdata %>% 
+  # glimpse() %>% 
+  mutate(pixc_relerr = pixc_err / sigma_est) %>% 
+  group_by(variable) %>% 
+  summarize(bias = mean(pixc_err),
+            sd = sd(pixc_err),
+            rel_bias = mean(pixc_relerr),
+            rel_sd = sd(pixc_relerr)) %>% 
+  mutate(rmse = sqrt(bias^2 + sd^2), 
+         rel_rmse = sqrt(rel_bias^2 + rel_sd^2)) %>% 
+  kable(digits = 2)
+  
+```
+
+
+### Coverage rates
+
+```{r}
+
+covfun <- function(x, sigma, pctl) {
+  pctl <- pctl / 100
+  bnd <- -qnorm((1 - pctl) / 2, mean = 0, sd = 1)
+  numin <- sum(abs(x / sigma) <= bnd)
+  out <- numin / length(x) * 100
+  out
+}
+
+valdata %>% 
+  # glimpse() %>% 
+  group_by(variable) %>% 
+  summarize(
+    `50` = covfun(pixc_err, sigma_est, 50),
+    `75` = covfun(pixc_err, sigma_est, 75),
+    `90` = covfun(pixc_err, sigma_est, 90),
+    `95` = covfun(pixc_err, sigma_est, 95),
+    `99` = covfun(pixc_err, sigma_est, 99)
+    ) %>% 
+  kable(digits = 2)
+
+# Now with bias removed
+valdata %>% 
+  # glimpse() %>% 
+  group_by(variable) %>% 
+  mutate(pixc_err = pixc_err - mean(pixc_err, na.rm = TRUE)) %>% 
+  summarize(
+    `50` = covfun(pixc_err, sigma_est, 50),
+    `75` = covfun(pixc_err, sigma_est, 75),
+    `90` = covfun(pixc_err, sigma_est, 90),
+    `95` = covfun(pixc_err, sigma_est, 95),
+    `99` = covfun(pixc_err, sigma_est, 99)
+    ) %>% 
+  kable(digits = 2)
+
+```
+
+### Scatterplots
+
+```{r}
+gg_scatter1 <- valdata %>% 
+  ggplot(aes(x = sigma_est^2, y = pixc_err^2)) + 
+  geom_point() + 
+  scale_x_log10() + scale_y_log10() +
+  geom_abline(slope = 1, intercept = 0) +
+  facet_wrap(~variable, scales = "free")
+
+gg_scatter1
+```
+
+### Spatial trends (downstream)
+
+```{r}
+valdata %>% 
+  ggplot(aes(x = node_id, y = pixc_err)) + 
+  geom_point() + 
+  facet_wrap(~variable, scales = "free") + 
+  stat_smooth()
+```
+
+
+### Normal quantil-quantile plots
+
+```{r}
+valdata %>% 
+  ggplot(aes(sample = pixc_err / sigma_est)) + 
+  geom_qq() +
+  geom_qq_line() +
+  facet_wrap(~variable, scales = "free")
+```
+

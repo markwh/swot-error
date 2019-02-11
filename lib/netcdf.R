@@ -30,7 +30,56 @@ rt_read <- function(ncfile, group = c("nodes", "reaches"),
   outvals_df
 }
 
+pixcvec_read <- function(ncfile, keep_na_vars = FALSE) {
+  
+  pcv_nc <- nc_open(ncfile)
+  on.exit(nc_close(pcv_nc))
+  
+  pcvvars <- names(pcv_nc$var)
+  
+  outvals_list <- map(pcvvars, ~as.vector(ncvar_get(pcv_nc, .))) %>% 
+    setNames(pcvvars)
+  
+  outvals_df <- as.data.frame(outvals_list)
+  if (! keep_na_vars) {
+    nacols <- map_lgl(outvals_list, ~sum(!is.na(.)) == 0)
+    outvals_df <- outvals_df[!nacols]
+  }
+  outvals_df
+}
 
+
+pixc_read <- function(ncfile, group = c("pixel_cloud", "tvp", "noise"),
+                    keep_na_vars = FALSE, filter_lalo = TRUE) {
+  group <- match.arg(group)
+  
+  pixc_nc <- nc_open(ncfile)
+  on.exit(nc_close(pixc_nc))
+  
+  grepstr <- sprintf("^%s/", group)
+  
+  grpvars <- names(pixc_nc$var)[grepl(grepstr, names(pixc_nc$var))]
+  grpnames <- splitPiece(grpvars, "/", 2, fixed = TRUE)
+  
+  outvals_list <- map(grpvars, ~as.vector(ncvar_get(pixc_nc, .))) %>% 
+    setNames(grpnames)
+  
+  outvals_df <- as.data.frame(outvals_list)
+  
+  outvals_df
+  if (! keep_na_vars) {
+    nacols <- map_lgl(outvals_list, ~sum(!is.na(.)) == 0)
+    outvals_df <- outvals_df[!nacols]
+  }
+  
+  if (filter_lalo && group == "pixel_cloud") {
+    outvals_df <- dplyr::filter(outvals_df, 
+                                !is.na(latitude), !is.na(longitude),
+                                latitude != 0, longitude != 0)
+  }
+  
+  outvals_df
+}
 
 #' Get a validation dataset from a set of RiverObs runs
 
@@ -100,3 +149,5 @@ rt_valdata <- function(dir, group = c("nodes", "reaches"),
     left_join(commondf, by = idvars)
   out
 }
+
+

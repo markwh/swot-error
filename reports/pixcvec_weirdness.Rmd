@@ -1,0 +1,108 @@
+---
+title: "pixcvec_weirdness"
+author: "Mark Hagemann"
+date: "2/11/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+library(knitr)
+
+opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+opts_knit$set(root.dir = "~/Documents/swot-error")
+```
+
+```{r}
+library(ProjectTemplate)
+load.project()
+```
+
+
+
+Here is a random node's output for pixcvec. Blue is from the Sac pixel cloud, red is from gdem "pixel cloud". For some reason, the pixel cloud pixcvec does not include anything in the channel--that's why the widths and areas are so biased.  
+
+```{r}
+sac_pcv <- pixcvec_read("output/sac04/pcv.nc")
+sac_gd_pcv <- pixcvec_read("output/sac04/pcv_gdem.nc")
+```
+
+```{r}
+set.seed(64891239)
+library(leaflet) 
+randnode <- sample(unique(sac_pcv$node_index), 1)
+randrch <- sample(unique(sac_pcv$reach_index), 1)
+
+pcv_mapdata <- sac_pcv %>% 
+  filter(node_index == randnode) %>%
+  # filter(reach_index == randrch) %>%
+  rename(lat = latitude_vectorproc, lon = longitude_vectorproc)
+
+pcv_gd_mapdata <- sac_gd_pcv %>% 
+  filter(node_index == randnode) %>%
+  # filter(reach_index == randrch) %>%
+  rename(lat = latitude_vectorproc, lon = longitude_vectorproc)
+
+
+leaflet() %>% 
+  addTiles() %>% 
+  addCircleMarkers(radius = 1, data = pcv_mapdata) %>% 
+  addCircleMarkers(radius = 1, color = "red", data = pcv_gd_mapdata)
+```
+
+
+Here is what my rdf file says--this is just copied from the swot_pixc2rivertile.py docstring:
+
+```
+width_db_file             (-) = None
+use_width_db              (-) = False
+reach_db_path             (-) = D:/data/SWOT-prior/PriorDistributionFolder/netcdfv2
+class_list                (-) = [2, 3, 4, 22, 23, 24]
+use_fractional_inundation (-) = [True, True, False, False, False, False]
+use_segmentation          (-) = [False, True, True, False, True, True]
+use_heights               (-) = [False, False, True, False, False, False]
+min_points                (-) = 100
+clip_buffer               (-) = 20.0
+ds                        (-) = None
+refine_centerline         (-) = False
+smooth                    (-) = 0.01
+alpha                     (-) = 1
+max_iter                  (-) = 1
+scalar_max_width          (-) = 600.0
+minobs                    (-) = 30
+trim_ends                 (-) = False
+min_fit_points            (-) = 3
+do_improved_geolocation   (-) = False
+geolocation_method        (-) = taylor
+height_agg_method         (-) = weight
+area_agg_method           (-) = composite
+```
+
+Any ideas what might be causing this?
+
+
+### Raw pixc data
+
+Subsetted to the bounding box of the above node data. 
+
+```{r}
+sacdir <- "D:/data/sac-simulator-output/tile-Sac-23Jan2019/tile-Sac-23Jan2019/"
+sacpixc <- pixc_read(ncfile = paste0(sacdir, "pixel_cloud.nc"))
+
+latmin <- min(pcv_mapdata$lat, na.rm = TRUE)
+lonmin <- min(pcv_mapdata$lon, na.rm = TRUE)
+latmax <- max(pcv_mapdata$lat, na.rm = TRUE)
+lonmax <- max(pcv_mapdata$lon, na.rm = TRUE)
+
+pal <- colorFactor("Set1", domain = sacpixc$classification)
+
+sacpixc %>% 
+  filter(latitude >= latmin, longitude >= lonmin, 
+         latitude <= latmax, longitude <= lonmax) %>%
+  leaflet() %>% 
+  addTiles() %>% 
+  addCircleMarkers(radius = 1, color = ~pal(classification))
+
+```
+
+
