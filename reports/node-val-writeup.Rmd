@@ -15,7 +15,8 @@ opts_knit$set(root.dir = "~/Documents/swot-error/")
 ```{r}
 library(ProjectTemplate)
 load.project()
-valdata <- rt_valdata("output/sac04", group = "nodes")
+valdata <- rt_valdata("output/sac04", group = "nodes") %>% 
+  dplyr::filter(variable != "area_detct")
 
 # valdata <- valdata %>% dplyr::filter(node_id != 3249122) %>% 
 #   dplyr::select(reach_id:sigma_est)
@@ -51,9 +52,11 @@ valdata %>%
             rel_sd = sd(pixc_relerr)) %>% 
   mutate(rmse = sqrt(bias^2 + sd^2), 
          rel_rmse = sqrt(rel_bias^2 + rel_sd^2)) %>% 
+  dplyr::select(variable, bias, sd, rmse, rel_bias, rel_sd, rel_rmse) %>% 
   kable(digits = 2)
   
 ```
+
 
 
 ### Coverage rates
@@ -72,8 +75,7 @@ valdata %>%
   # glimpse() %>% 
   group_by(variable) %>% 
   summarize(
-    `50` = covfun(pixc_err, sigma_est, 50),
-    `75` = covfun(pixc_err, sigma_est, 75),
+    `68` = covfun(pixc_err, sigma_est, 68),
     `90` = covfun(pixc_err, sigma_est, 90),
     `95` = covfun(pixc_err, sigma_est, 95),
     `99` = covfun(pixc_err, sigma_est, 99)
@@ -86,8 +88,7 @@ valdata %>%
   group_by(variable) %>% 
   mutate(pixc_err = pixc_err - mean(pixc_err, na.rm = TRUE)) %>% 
   summarize(
-    `50` = covfun(pixc_err, sigma_est, 50),
-    `75` = covfun(pixc_err, sigma_est, 75),
+    `68` = covfun(pixc_err, sigma_est, 68),
     `90` = covfun(pixc_err, sigma_est, 90),
     `95` = covfun(pixc_err, sigma_est, 95),
     `99` = covfun(pixc_err, sigma_est, 99)

@@ -29,15 +29,82 @@ valdata <- rt_valdata("output/sac04", group = "nodes")
     - height
     - width 
     - lat, lon
-    - area (detected, total)
+    - area (total)
 - All this at node scale
+
+## Overview statistics
+
+Bias, stdev, RMSE
+
+```{r}
+valdata %>% 
+  # glimpse() %>% 
+  mutate(pixc_relerr = pixc_err / sigma_est) %>% 
+  group_by(variable) %>% 
+  summarize(bias = mean(pixc_err),
+            sd = sd(pixc_err),
+            rel_bias = mean(pixc_relerr),
+            rel_sd = sd(pixc_relerr)) %>% 
+  mutate(rmse = sqrt(bias^2 + sd^2), 
+         rel_rmse = sqrt(rel_bias^2 + rel_sd^2)) %>% 
+  dplyr::select(variable, bias, sd, rmse, rel_bias, rel_sd, rel_rmse) %>% 
+  kable(digits = 2)
+  
+```
+
+
+## Coverage rates
+
+How well do error percentiles match theoretical confidence intervals?
+
+```{r}
+covfun <- function(x, sigma, pctl) {
+  pctl <- pctl / 100
+  bnd <- -qnorm((1 - pctl) / 2, mean = 0, sd = 1)
+  numin <- sum(abs(x / sigma) <= bnd)
+  out <- numin / length(x) * 100
+  out
+}
+
+valdata %>% 
+  # glimpse() %>% 
+  group_by(variable) %>% 
+  summarize(
+    `68` = covfun(pixc_err, sigma_est, 68),
+    `90` = covfun(pixc_err, sigma_est, 90),
+    `95` = covfun(pixc_err, sigma_est, 95),
+    `99` = covfun(pixc_err, sigma_est, 99)
+    ) %>% 
+  kable(digits = 2)
+```
+
+## Coverage rates
+
+The same, with bias removed
+
+```{r}
+# Now with bias removed
+valdata %>% 
+  # glimpse() %>% 
+  group_by(variable) %>% 
+  mutate(pixc_err = pixc_err - mean(pixc_err, na.rm = TRUE)) %>% 
+  summarize(
+    `68` = covfun(pixc_err, sigma_est, 68),
+    `90` = covfun(pixc_err, sigma_est, 90),
+    `95` = covfun(pixc_err, sigma_est, 95),
+    `99` = covfun(pixc_err, sigma_est, 99)
+    ) %>% 
+  kable(digits = 2)
+```
+
+
 
 ## Error histograms (pixc - gdem)
 
 ```{r}
 valdata %>% 
   ggplot(aes(x = pixc_err)) +
-  geom_histogram(bins = 15) +
+  geom_histogram(aes(y = ..density..), bins = 15) +
   facet_wrap(~variable, scales = "free")
 ```
 
@@ -49,7 +116,7 @@ Adjusting relative to estimated uncertainty stdev should produce distribution wi
 ```{r}
 valdata %>% 
   ggplot(aes(x = pixc_err / sigma_est)) +
-  geom_histogram(bins = 15) +
+  geom_histogram(aes(y = ..density..), bins = 15) +
   facet_wrap(~variable, scales = "free")
 ```
 
@@ -88,6 +155,19 @@ valdata %>%
   stat_function(fun = dnorm, args = list(mean = 0, sd = 1), color = "blue")
 
 ```
+
+## Normal quantile-quantile plots - relative errors
+
+If errors are normally distributed, points should lie on a straight line
+
+```{r}
+valdata %>% 
+  ggplot(aes(sample = pixc_err / sigma_est)) + 
+  geom_qq() +
+  geom_qq_line() +
+  facet_wrap(~variable, scales = "free")
+```
+
 
 ## Conclusions:
 
@@ -148,5 +228,7 @@ valdata %>%
   geom_point(aes(y = err_shift)) +
   theme_bw()
 ```
+
+## Spatial trends in error
 
 
