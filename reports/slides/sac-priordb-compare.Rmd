@@ -1,0 +1,158 @@
+---
+title: "Sac results using different prior db's"
+author: "Mark Hagemann"
+date: "2/14/2019"
+output: 
+  ioslides_presentation:
+    incremental: true
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+opts_chunk$set(echo = FALSE, eval = TRUE, warning = FALSE, message = FALSE,
+               cache = TRUE, cache.rebuild = TRUE)
+opts_knit$set(root.dir = "~/Documents/swot-error")
+library(leaflet)
+```
+
+```{r, eval = TRUE}
+
+# print(getwd())
+library(ProjectTemplate)
+load.project()
+```
+
+
+## Intro
+
+- Rui has updated nodes and centerlines for the Sacramento river. 
+- This may help address width and area biases in rivertile nodes. 
+- Let's find out!
+
+## Old vs. new centerlines
+
+Old in red, new (Rui's) in blue:
+
+```{r}
+newlalo <- priordb_read("data/priordb-update/Sac_sample_db7.nc", group = "centerlines")
+latlim = with(newlalo, c(min(lat, na.rm = TRUE), max(lat, na.rm = TRUE)))
+lonlim = with(newlalo, c(min(lon, na.rm = TRUE), max(lon, na.rm = TRUE)))
+
+oldlalo <- "D:/data/SWOT-prior/PriorDistributionFolder/netcdfv2/NA07.nc" %>% 
+  priordb_read(group = "centerlines", latlim = latlim, lonlim = lonlim)
+newlalo %>% 
+  leaflet() %>% 
+  addTiles() %>% 
+  addCircleMarkers(radius = 1) %>% 
+  addCircleMarkers(data = oldlalo, color = "red", radius = 1) 
+```
+
+
+## Old Node results
+
+Relative error histograms
+
+```{r}
+valdata_old <- rt_valdata("output/sac04", group = "nodes") %>% 
+  dplyr::filter(variable != "area_detct") 
+
+valdata_old %>% 
+  ggplot(aes(x = pixc_err / sigma_est)) +
+  geom_histogram(aes(y = ..density..), bins = 15) +
+  facet_wrap(~variable, scales = "free")
+```
+
+
+## New Node results
+
+Relative error histograms 
+
+```{r}
+valdata_new <- rt_valdata("output/sac05", group = "nodes") %>% 
+  dplyr::filter(variable != "area_detct") 
+
+valdata_new %>% 
+  ggplot(aes(x = pixc_err / sigma_est)) +
+  geom_histogram(aes(y = ..density..), bins = 15) +
+  facet_wrap(~variable, scales = "free")
+```
+
+
+
+
+## Old Node results
+
+QQ plots
+
+```{r}
+valdata_old %>% 
+  ggplot(aes(sample = pixc_err / sigma_est)) + 
+  geom_qq() +
+  geom_qq_line() +
+  facet_wrap(~variable, scales = "free")
+```
+
+## New Node results
+
+```{r}
+valdata_new %>% 
+  ggplot(aes(sample = pixc_err / sigma_est)) + 
+  geom_qq() +
+  geom_qq_line() +
+  facet_wrap(~variable, scales = "free")
+```
+
+
+## Old Node Results
+
+```{r}
+
+badnodes_old <- valdata_old %>% 
+  dplyr::filter(variable == "width") %>% 
+  arrange(desc(pixc_err)) %>% 
+  `[[`("node_id") %>% 
+  `[`(1:4)
+
+pcvdata_old <- pixcvec_read("output/sac04/pcv.nc") %>% 
+  dplyr::filter(node_index %in% badnodes_old) %>% 
+  rename(lat = latitude_vectorproc, lon = longitude_vectorproc)
+
+pcvdata_gdem_old <- pixcvec_read("output/sac04/pcv_gdem.nc") %>% 
+  dplyr::filter(node_index %in% badnodes_old) %>% 
+  rename(lat = latitude_vectorproc, lon = longitude_vectorproc)
+
+
+pcvdata_old  %>% 
+  leaflet() %>% 
+  addTiles() %>% 
+  addCircleMarkers(radius = 1, popup = ~format(node_index)) %>% 
+  addCircleMarkers(radius = 1, color = "red", data =pcvdata_gdem_old)
+```
+
+## New Node Results
+
+```{r}
+
+
+badnodes <- valdata_new %>% 
+  dplyr::filter(variable == "width") %>% 
+  arrange(desc(pixc_err)) %>% 
+  `[[`("node_id") %>% 
+  `[`(1:4)
+
+pcvdata_new <- pixcvec_read("output/sac05/pcv.nc") %>% 
+  dplyr::filter(node_index %in% badnodes) %>% 
+  rename(lat = latitude_vectorproc, lon = longitude_vectorproc)
+
+pcvdata_gdem_new <- pixcvec_read("output/sac05/pcv_gdem.nc") %>% 
+  dplyr::filter(node_index %in% badnodes) %>% 
+  rename(lat = latitude_vectorproc, lon = longitude_vectorproc)
+
+
+pcvdata_new  %>% 
+  leaflet() %>% 
+  addTiles() %>% 
+  addCircleMarkers(radius = 1, popup = ~format(node_index)) %>% 
+  addCircleMarkers(radius = 1, color = "red", data =pcvdata_gdem_new)
+```
+

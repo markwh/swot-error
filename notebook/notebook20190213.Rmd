@@ -1,0 +1,101 @@
+---
+title: "notebook20190213"
+author: "Mark Hagemann"
+date: "2/13/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Working on checking errors against runs using Rui's updated prior db. 
+
+Do RiverObs runs using this prior (now in data/priordb-update).
+
+```{r}
+newnc <- nc_open("../data/priordb-update/Sac_sample_db7.nc")
+
+names(newnc$var)
+# newlalo <- data.frame(lon = ncvar_get(newnc, "nodes/x"),
+#                       lat = ncvar_get(newnc, "nodes/y"))
+newlalo <- data.frame(lon = ncvar_get(newnc, "centerlines/x"),
+                      lat = ncvar_get(newnc, "centerlines/y"))
+
+nc_close(newnc)
+```
+
+I just wrote a function for this. 
+
+```{r}
+newlalo <- priordb_read("../data/priordb-update/Sac_sample_db7.nc", group = "centerlines")
+latlim = with(newlalo, c(min(lat, na.rm = TRUE), max(lat, na.rm = TRUE)))
+lonlim = with(newlalo, c(min(lon, na.rm = TRUE), max(lon, na.rm = TRUE)))
+
+oldlalo <- "D:/data/SWOT-prior/PriorDistributionFolder/netcdfv2/NA07.nc" %>% 
+  priordb_read(group = "centerlines", latlim = latlim, lonlim = lonlim)
+newlalo %>% 
+  leaflet() %>% 
+  addTiles() %>% 
+  addCircleMarkers(radius = 1) %>% 
+  addCircleMarkers(data = oldlalo, color = "red", radius = 1) 
+  
+
+
+
+```
+
+I don't like how long that takes to render. Move on to doing the analysis from before. 
+
+
+```{r}
+oldpcv <- pixcvec_read("../output/sac04/pcv.nc")
+newpcv <- pixcvec_read("../output/sac05/pcv.nc")
+
+
+glimpse(oldpcv)
+
+```
+
+Map just the one bend's nodes. Ugh, the updated db has different node indices. 
+
+```{r}
+checknodes <- c(3249074, 3249075)
+
+pcv1 <- pixcvec_read("../output/sac04/pcv.nc") %>% glimpse()
+  dplyr::filter(node_index %in% checknodes) %>% 
+  mutate(lat = latitude_vectorproc,
+         lon = longitude_vectorproc)
+
+pcv1_gdem <- pixcvec_read("../output/sac04/pcv_gdem.nc") %>% 
+  dplyr::filter(node_index %in% checknodes) %>% 
+  mutate(lat = latitude_vectorproc,
+         lon = longitude_vectorproc)
+
+
+pcv2 <- pixcvec_read("../output/sac05/pcv.nc") %>% glimpse()
+  dplyr::filter(node_index %in% checknodes) %>% 
+  mutate(lat = latitude_vectorproc,
+         lon = longitude_vectorproc)
+
+pcv2_gdem <- pixcvec_read("../output/sac05/pcv_gdem.nc") %>% glimpse()
+  dplyr::filter(node_index %in% checknodes) %>% 
+  mutate(lat = latitude_vectorproc,
+         lon = longitude_vectorproc)
+
+unique(pcv2$node_index)
+unique(pcv1$node_index)
+
+
+
+leaflet() %>% 
+  addTiles() %>% 
+  addCircleMarkers(radius = 1, data = pcv1) %>% 
+  addCircleMarkers(radius = 1, color = "red", data = pcv1_gdem)
+
+leaflet() %>% 
+  addTiles() %>% 
+  addCircleMarkers(radius = 1, data = pcv2) %>% 
+  addCircleMarkers(radius = 1, color = "red", data = pcv2_gdem)
+```
+

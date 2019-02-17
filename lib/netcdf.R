@@ -50,7 +50,8 @@ pixcvec_read <- function(ncfile, keep_na_vars = FALSE) {
 
 
 pixc_read <- function(ncfile, group = c("pixel_cloud", "tvp", "noise"),
-                    keep_na_vars = FALSE, filter_lalo = TRUE) {
+                      latlim = c(-90, 90), lonlim = c(-180, 180),
+                      keep_na_vars = FALSE) {
   group <- match.arg(group)
   
   pixc_nc <- nc_open(ncfile)
@@ -66,18 +67,50 @@ pixc_read <- function(ncfile, group = c("pixel_cloud", "tvp", "noise"),
   
   outvals_df <- as.data.frame(outvals_list)
   
-  outvals_df
   if (! keep_na_vars) {
     nacols <- map_lgl(outvals_list, ~sum(!is.na(.)) == 0)
     outvals_df <- outvals_df[!nacols]
   }
   
-  if (filter_lalo && group == "pixel_cloud") {
+  # Filter lat/lon that are exactly 0, restrict to bounding box
+  if (group == "pixel_cloud") {
     outvals_df <- dplyr::filter(outvals_df, 
-                                !is.na(latitude), !is.na(longitude),
-                                latitude != 0, longitude != 0)
+                    !is.na(latitude), !is.na(longitude),
+                    latitude != 0, longitude != 0,
+                    longitude >= lonlim[1], longitude <= lonlim[2], 
+                    latitude >= latlim[1], latitude <= latlim[2])
   }
   
+  outvals_df
+}
+
+priordb_read <- function(ncfile, group = c("reaches", "nodes", "centerlines"),
+                         latlim = c(-90, 90), lonlim = c(-180, 180),
+                         keep_na_vars = FALSE) {
+  
+  group <- match.arg(group)
+  
+  pdb_nc <- nc_open(ncfile)
+  on.exit(nc_close(pdb_nc))
+  
+  grepstr <- sprintf("^%s/", group)
+  
+  grpvars <- names(pdb_nc$var)[grepl(grepstr, names(pdb_nc$var))]
+  grpnames <- splitPiece(grpvars, "/", 2, fixed = TRUE)
+  
+  outvals_list <- map(grpvars, ~as.vector(ncvar_get(pdb_nc, .))) %>% 
+    setNames(grpnames)
+  
+  outvals_df <- as.data.frame(outvals_list) %>% 
+    dplyr::mutate(x = ifelse(x > 180, x - 360, x),
+                  lon = x, lat = y) %>% 
+    dplyr::filter(x >= lonlim[1], x <= lonlim[2], 
+                  y >= latlim[1], y <= latlim[2])
+  
+  if (! keep_na_vars) {
+    nacols <- map_lgl(outvals_list, ~sum(!is.na(.)) == 0)
+    outvals_df <- outvals_df[!nacols]
+  }
   outvals_df
 }
 
