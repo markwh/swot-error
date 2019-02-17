@@ -1,0 +1,212 @@
+---
+title: "notebook20190212"
+author: "Mark Hagemann"
+date: "2/12/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Looking at new dataset from Brent.
+
+```{r}
+sacdir <- "D:/data/sac-simulator-output/tile-Sac-11Feb2019/"
+list.files(sacdir, recursive = TRUE)
+
+```
+
+Just pick one of these for now and look at how large the object is. 
+
+```{r}
+sacrt1 <- rt_read("../output/sac05/rt.nc")
+
+glimpse(sacrt1)
+
+leaflet(sacrt1) %>% 
+  addTiles() %>% 
+  addCircleMarkers()
+```
+
+
+Try using Renato's layover bias estimates.
+
+```{r}
+library(R.matlab)
+
+lyvr1 <- R.matlab::readMat("../data/NA07_grwl_merged_dam_swot_obs.mat")
+
+str(lyvr1[[1]])
+
+lyvr <- setNames(lyvr1[[1]], dimnames(lyvr1[[1]])[[1]])[1:13]
+str(lyvr)
+
+head(lyvr$Orbs)
+summary(lyvr$Orbs)
+```
+
+
+
+```{r}
+lyvr[c("latitude", "longitude")] %>% 
+  as.data.frame() %>% 
+  sample_n(10000) %>% 
+  leaflet() %>% 
+  addTiles() %>% 
+  addCircleMarkers(radius = 1, popup = ~paste(latitude, longitude))
+
+bbox <- c(41, -123, 37, -121)
+
+lyvr[c("latitude", "longitude")] %>% 
+  as.data.frame() %>% 
+  dplyr::filter(latitude < 41, longitude < -121, 
+                latitude > 37, longitude > -123) %>% 
+  leaflet() %>% 
+  addTiles() %>% 
+  addCircleMarkers(radius = 1, popup = ~paste(latitude, longitude))
+
+
+```
+
+
+```{r}
+lyvrdf <- lyvr %>% 
+  as.data.frame() %>% 
+  dplyr::filter(latitude < 41, longitude < -121, 
+                latitude > 37, longitude > -123)
+
+
+orbdf <- lyvrdf %>% 
+  dplyr::select(latitude, longitude, Orbs.1:Orbs.7) %>% 
+  gather(key = "key", value = "orb", -latitude, -longitude) %>% 
+  dplyr::select(-key)
+
+hbiasdf <- lyvrdf %>% 
+  dplyr::select(latitude, longitude, layheightbias.1:layheightbias.7) %>% 
+  gather(key = "key", value = "hbias", -latitude, -longitude) %>% 
+  dplyr::select(-key) %>% 
+  mutate(orb = orbdf$orb) %>% 
+  dplyr::filter(!is.na(hbias))
+```
+
+
+Now I can filter based on the orbits I'm interested in.
+
+- I don't know which one I was using, but it's one of 264, 249, or 527.
+
+```{r}
+
+laymapdf1 <- hbiasdf %>% 
+  dplyr::filter(orb == 527, !is.na(hbias))
+
+pal1 <- colorNumeric(palette = c("blue", "red"), domain = laymapdf1$hbias)
+
+laymapdf1 %>% 
+  leaflet() %>% 
+  addTiles() %>% 
+  addCircleMarkers(color = ~pal1(hbias))
+
+```
+
+
+Next item is to match up the lat/lon from my nodes to the layover df lat/lon. 
+
+```{r}
+valdata <- rt_valdata(dir = "../output/sac04")
+
+lalo_valdata <- valdata %>% 
+  dplyr::filter(variable %in% c("latitude", "longitude")) %>% 
+  dplyr::select(node_id, variable, gdem_val) %>% 
+  spread(key = variable, value = gdem_val)
+
+herrdf <- valdata %>% 
+  dplyr::select(node_id, variable, pixc_err) %>% 
+  dplyr::filter(variable == "height") %>% 
+  left_join(lalo_valdata, by = "node_id") %>% 
+  mutate(longitude = ifelse(longitude > 180, longitude - 360, longitude))
+```
+
+I'll just do a nearest neighbor interpolation following [here](https://rspatial.org/analysis/4-interpolation.html)
+
+
+```{r}
+library(dismo)
+v <- voronoi(laymapdf1[c("longitude", "latitude")])
+plot(v)
+v_sf <- st_as_sf(v)
+
+herrgeom <- st_as_sf(herrdf, coords = c("longitude", "latitude"))
+
+foo <- st_within(herrgeom$geometry, v_sf, sparse = FALSE)
+apply(foo, 1, which)
+
+
+```
+
+That doesn't look right. Map it. 
+
+```{r}
+unqlocs <- apply(foo, 1, which) %>% unique()
+
+laymapdf1[unqlocs, ] %>% 
+  leaflet() %>% 
+  addTiles() %>% 
+  addCircleMarkers() %>% 
+  addCircleMarkers(data = herrdf, color = "red", radius = 3)
+```
+
+
+```{r}
+passopts <- c(264, 249, 527)
+
+hbiasdf %>% 
+  dplyr::filter(orb == passopts[2]) %>% 
+  leaflet() %>% 
+  addTiles() %>% 
+  addCircleMarkers() %>% 
+  addCircleMarkers(data = herrdf, color = "red", radius = 3)
+```
+
+Conclusion: it must be pass 249
+
+```{r}
+library(dismo)
+
+hbias249 <- hbiasdf %>% 
+  dplyr::filter(orb == 249) %>% 
+  rename(lat_lvr = latitude, lon_lvr = longitude)
+
+v <- hbias249 %>% 
+  dplyr::select(lon_lvr, lat_lvr) %>% 
+  voronoi()
+# plot(v)
+v_sf <- st_as_sf(v)
+
+herrgeom <- st_as_sf(herrdf, coords = c("longitude", "latitude"))
+
+foo <- st_within(herrgeom$geometry, v_sf, sparse = FALSE)
+joinrows <- apply(foo, 1, which)
+
+
+herr_join <- cbind(herrdf, hbias249[joinrows, ])
+
+plot(pixc_err ~ hbias, herr_join, xlab = "predicted layover height bias",
+     ylab = "observed height error"); abline(0, 1)
+summary(lm(pixc_err ~ 0 + hbias, herr_join))
+```
+
+Bin the hbias for a boxplot. 
+
+```{r}
+bins <- cut(herr_join$hbias, breaks = c(0, 0.1, 0.2, 0.31))
+
+herr_join$hbias_bin <- bins
+
+boxplot(pixc_err ~ hbias_bin, herr_join, 
+        xlab = "binned layover bias estimate", 
+        ylab = "observed height error"); abline(h = 0.13, lty = 2)
+
+```
+
+
