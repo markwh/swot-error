@@ -1,0 +1,17 @@
+outdir,indir,priordb,case,pass,bndry_cond,smearing,land_sig0,water_sig0,notes
+./output/sac02,$SACDIR2,$PRIORLOC1,Sacramento,249,109,50m,-5dB,10dB,
+./output/sac03,$SACDIR3,$PRIORLOC1,Sacramento,249,109,50m,68 pctile,3dB wind calc,darkwater
+./output/sac04,$SACDIR4,$PRIORLOC1,Sacramento,249,109,50m,-100dB,3dB wind calc,darkwater
+./output/sac05,$SACDIR5,$PRIORLOC1,Sacramento,249,109,50m,-100dB,10dB,
+./output/sac06,$SACDIR6,$PRIORLOC1,Sacramento,249,220,50m,-5dB,10dB,
+./output/sac07,$SACDIR7,$PRIORLOC1,Sacramento,249,220,50m,68 pctile,3dB wind calc,
+./output/sac08,$SACDIR8,$PRIORLOC1,Sacramento,249,220,50m,-100dB,3dB wind calc,
+./output/sac09,$SACDIR9,$PRIORLOC1,Sacramento,249,220,50m,-100dB,10dB,
+./output/sac10,$SACDIR2,$PRIORLOC2,Sacramento,249,109,50m,-5dB,10dB,
+./output/sac11,$SACDIR3,$PRIORLOC2,Sacramento,249,109,50m,68 pctile,3dB wind calc,
+./output/sac12,$SACDIR4,$PRIORLOC2,Sacramento,249,109,50m,-100dB,3dB wind calc,
+./output/sac13,$SACDIR5,$PRIORLOC2,Sacramento,249,109,50m,-100dB,10dB,
+./output/sac14,$SACDIR6,$PRIORLOC2,Sacramento,249,220,50m,-5dB,10dB,
+./output/sac15,$SACDIR7,$PRIORLOC2,Sacramento,249,220,50m,68 pctile,3dB wind calc,
+./output/sac16,$SACDIR8,$PRIORLOC2,Sacramento,249,220,50m,-100dB,3dB wind calc,
+./output/sac17,$SACDIR9,$PRIORLOC2,Sacramento,249,220,50m,-100dB,10dB,
