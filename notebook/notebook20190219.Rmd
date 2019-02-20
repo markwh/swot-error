@@ -1,0 +1,122 @@
+---
+title: "notebook20190219"
+author: "Mark Hagemann"
+date: "2/19/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+Some plots to send to Brent
+
+Compare runs sac01 (original), sac02 (Rui's db), and sac11 (updated 5dB pixc, Rui's db)
+
+- use new `rt_val_hist()`, 
+
+```{r}
+gg1 <- rt_val_hist(dir = "../output/sac01", 
+                   vars = c("height", "height2"), center= TRUE) + 
+  theme_bw() +
+  ggtitle("Original Sac output, original prior db")
+gg2 <- rt_val_hist(dir = "../output/sac02", 
+                   vars = c("height", "height2"), center= TRUE) + 
+  theme_bw() +
+  ggtitle("Original Sac output, updated prior db")
+gg3 <- rt_val_hist(dir = "../output/sac15", 
+            vars = c("height", "height2"), center= TRUE) + 
+  theme_bw() +
+  ggtitle("New Sac output (-5dB land), updated prior db")
+
+gg1 
+gg2
+gg3
+
+ggsave(filename = "../graphs/heighthist1.png", gg1, width = 5, height = 4)
+ggsave(filename = "../graphs/heighthist2.png", gg2, width = 5, height = 4)
+ggsave(filename = "../graphs/heighthist3.png", gg3, width = 5, height = 4)
+```
+
+
+```{r}
+gg4 <- rt_val_nodeseries("../output/sac01") +
+    ggtitle("Original Sac output, original prior db")
+
+gg5 <- rt_val_nodeseries("../output/sac02") +
+    ggtitle("Original Sac output, updated prior db")
+
+gg6 <- rt_val_nodeseries("../output/sac11") +
+    ggtitle("New Sac output (-5dB land), updated prior db")
+
+ggsave(filename = "../graphs/heightnodes1.png", gg4, width = 5, height = 4)
+ggsave(filename = "../graphs/heightnodes2.png", gg5, width = 5, height = 4)
+ggsave(filename = "../graphs/heightnodes3.png", gg6, width = 5, height = 4)
+```
+
+What's flow condition do?
+
+```{r}
+rt_val_hist(dir = "../output/sac11", 
+            vars = c("height", "height2"), center= TRUE) + 
+  theme_bw() +
+  ggtitle("New Sac output (-5dB land), updated prior db")
+rt_val_hist(dir = "../output/sac15", 
+            vars = c("height", "height2"), center= TRUE) + 
+  theme_bw() +
+  ggtitle("New Sac output (-5dB land), updated prior db")
+
+```
+
+
+```{r}
+rtold <- rt_read("../output/sac02/rt.nc")
+rtnew <- rt_read("../output/sac15/rt.nc")
+
+cols <- c("height_u", "height2_u")
+
+boxplot(rtold[cols], main = "old Sac files")
+boxplot(rtnew[cols], main = "new Sac files")
+
+plot(rtold[cols], main = "old Sac files"); abline(0, 1)
+plot(rtnew[cols], main = "new Sac files"); abline(0, 1)
+```
+
+
+```{r}
+# rtcheck <- rt_read("../foo_rt.nc")
+rtcheck <- rt_read("../foodir/rt.nc")
+
+
+cols <- c("height_u", "height2_u")
+
+boxplot(rtcheck[cols], main = "rerun of new Sac files")
+
+plot(rtcheck[cols], main = "old Sac files"); abline(0, 1)
+```
+
+As the above plots now show, the behavior has been fixed. 
+
+Now compare area and width to see if bias is better than before. 
+
+```{r}
+library(kableExtra)
+rt_val_hist("../output/sacruns_20190218/sac02", scale = FALSE, vars = c("width", "area_total"))
+rt_val_hist("../output/sac02", scale = FALSE, vars = c("width", "area_total"))
+rt_val_hist("../output/sac15", scale = FALSE, vars = c("width", "area_total"))
+
+
+rt_val_hist("../output/sac02", scale = FALSE, vars = "width") + xlim(-100, 200)
+rt_val_hist("../output/sac15", scale = FALSE, vars = "width") + xlim(-100, 200)
+
+
+list(old_sacfile = rt_val_hist("../output/sac02", scale = FALSE, vars = "width")$data,
+  new_sacfile = rt_val_hist("../output/sac15", scale = FALSE, vars = "width")$data) %>% 
+  bind_rows(.id = "version") %>% 
+  group_by(version) %>% 
+  summarize(bias = mean(pixc_err), median = median(pixc_err)) %>% 
+  kable(format = "latex") %>% 
+  save_kable("../graphs/bias_compare_table.png")
+```
+

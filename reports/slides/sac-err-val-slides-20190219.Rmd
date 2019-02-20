@@ -1,0 +1,297 @@
+---
+title: "Sacramento Error Validation--new db"
+author: "Mark Hagemann"
+date: "2/13/2019"
+output: 
+  ioslides_presentation:
+    incremental: true
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+library(leaflet)
+opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE, 
+               cache = TRUE, cache.rebuild = TRUE)
+opts_knit$set(root.dir = "~/Documents/swot-error/")
+```
+
+```{r}
+library(ProjectTemplate)
+load.project()
+valdata <- rt_valdata("output/sac15", group = "nodes") %>% 
+  dplyr::filter(variable != "area_detct") 
+
+```
+
+## Bias, stdev, RMSE
+
+```{r}
+valdata %>% 
+  # glimpse() %>% 
+  mutate(pixc_relerr = pixc_err / sigma_est) %>% 
+  group_by(variable) %>% 
+  summarize(bias = mean(pixc_err),
+            sd = sd(pixc_err),
+            rel_bias = mean(pixc_relerr),
+            rel_sd = sd(pixc_relerr)) %>% 
+  mutate(rmse = sqrt(bias^2 + sd^2), 
+         rel_rmse = sqrt(rel_bias^2 + rel_sd^2)) %>% 
+  dplyr::select(variable, bias, sd, rmse, rel_bias, rel_sd, rel_rmse) %>% 
+  kable(digits = 2)
+  
+```
+
+
+## Coverage rates
+
+How well do error percentiles match theoretical confidence intervals?
+
+```{r}
+covfun <- function(x, sigma, pctl) {
+  pctl <- pctl / 100
+  bnd <- -qnorm((1 - pctl) / 2, mean = 0, sd = 1)
+  numin <- sum(abs(x / sigma) <= bnd)
+  out <- numin / length(x) * 100
+  out
+}
+
+valdata %>% 
+  # glimpse() %>% 
+  group_by(variable) %>% 
+  summarize(
+    `68 (1-sigma)` = covfun(pixc_err, sigma_est, 68),
+    `90` = covfun(pixc_err, sigma_est, 90),
+    `95 (2-sigma)` = covfun(pixc_err, sigma_est, 95),
+    `99` = covfun(pixc_err, sigma_est, 99)
+    ) %>% 
+  kable(digits = 2)
+```
+
+## Coverage rates
+
+The same, with bias removed
+
+```{r}
+# Now with bias removed
+valdata %>% 
+  # glimpse() %>% 
+  group_by(variable) %>% 
+  mutate(pixc_err = pixc_err - mean(pixc_err, na.rm = TRUE)) %>% 
+  summarize(
+    `68 (1-sigma)` = covfun(pixc_err, sigma_est, 68),
+    `90` = covfun(pixc_err, sigma_est, 90),
+    `95 (2-sigma)` = covfun(pixc_err, sigma_est, 95),
+    `99` = covfun(pixc_err, sigma_est, 99)
+    ) %>% 
+  kable(digits = 2)
+```
+
+
+
+## Error histograms (pixc - gdem)
+
+```{r}
+valdata %>% 
+  ggplot(aes(x = pixc_err)) +
+  geom_histogram(aes(y = ..density..), bins = 15) +
+  facet_wrap(~variable, scales = "free")
+```
+
+
+## Relative Error histograms (err / sigma)
+
+Adjusting relative to estimated uncertainty stdev should produce distribution with stdev=1
+
+```{r}
+valdata %>% 
+  ggplot(aes(x = pixc_err / sigma_est)) +
+  geom_histogram(aes(y = ..density..), bins = 15) +
+  facet_wrap(~variable, scales = "free")
+```
+
+## Relative error with bias removed
+
+Uncertainty estimates don't account for bias/long-wavelength error, validate against bias-adjusted errors. 
+
+```{r}
+valdata %>% 
+  group_by(variable) %>% 
+  mutate(pixc_err_adj = pixc_err - mean(pixc_err, na.rm = TRUE)) %>% 
+  ungroup() %>% 
+  dplyr::filter(abs(pixc_err_adj / sigma_est) < 125) %>% 
+  # dplyr::filter(variable == "height") %>%
+  # arrange(pixc_err_adj)
+  ggplot(aes(x = pixc_err_adj / sigma_est)) +
+  geom_histogram(aes(y = ..density..), bins = 15) +
+  facet_wrap(~variable, scales = "free")
+```
+
+## Relative error with bias removed
+
+Compare to standard normal distribution
+
+```{r}
+valdata %>% 
+  group_by(variable) %>% 
+  mutate(pixc_err_adj = pixc_err - mean(pixc_err, na.rm = TRUE)) %>% 
+  ungroup() %>% 
+  dplyr::filter(abs(pixc_err_adj / sigma_est) < 125) %>% 
+  # dplyr::filter(variable == "height") %>%
+  # arrange(pixc_err_adj)
+  ggplot(aes(x = pixc_err_adj / sigma_est)) +
+  geom_histogram(aes(y = ..density..), bins = 15) +
+  facet_wrap(~variable, scales = "free") +
+  stat_function(fun = dnorm, args = list(mean = 0, sd = 1), color = "blue")
+
+```
+
+## Normal quantile-quantile plots - relative errors
+
+If errors are normally distributed, points should lie on the line
+
+```{r}
+valdata %>% 
+  ggplot(aes(sample = pixc_err / sigma_est)) + 
+  geom_qq() +
+  geom_qq_line() +
+  facet_wrap(~variable, scales = "free")
+```
+
+## Worst width error nodes
+
+```{r, eval = FALSE}
+
+
+lalodata <- valdata %>% 
+  dplyr::select(reach_id, node_id, variable, pixc_val) %>% 
+  dplyr::filter(variable %in% c("latitude", "longitude")) %>% 
+  spread(key = variable, value = pixc_val)
+widthdata <- valdata %>% 
+  dplyr::filter(variable == "width") %>% 
+  dplyr::select(reach_id, node_id, variable, pixc_err) %>% 
+  spread(key = variable, value = pixc_err)
+
+mapdata <- left_join(lalodata, widthdata, by = c("reach_id", "node_id"))
+
+pal <- colorFactor(c("blue", "red"), 
+                   domain = abs(mapdata$width))
+
+mapdata %>% 
+  leaflet() %>% 
+  addTiles() %>% 
+  addCircleMarkers(color = ~pal(abs(width)))
+```
+
+
+```{r}
+badnodes <- valdata %>% 
+  dplyr::filter(variable == "width") %>% 
+  arrange(desc(abs(pixc_err))) %>% 
+  `[[`("node_id") %>% 
+  `[`(1:4)
+
+pcvdata <- pixcvec_read("output/sac15/pcv.nc") %>% 
+  dplyr::filter(node_index %in% badnodes) %>% 
+  rename(lat = latitude_vectorproc, lon = longitude_vectorproc)
+
+pcvdata_gdem <- pixcvec_read("output/sac15/pcv_gdem.nc") %>% 
+  dplyr::filter(node_index %in% badnodes) %>% 
+  rename(lat = latitude_vectorproc, lon = longitude_vectorproc)
+
+
+pcvdata  %>% 
+  leaflet() %>% 
+  addTiles() %>% 
+  addCircleMarkers(radius = 1, popup = ~format(node_index)) %>% 
+  addCircleMarkers(radius = 1, color = "red", data =pcvdata_gdem)
+
+```
+
+
+## Heights by node
+
+blue: 1-sigma; pink: 95% confidence interval
+
+```{r}
+valdata %>% 
+  dplyr::filter(variable == "height") %>% 
+  ggplot(aes(x = node_id)) +
+  geom_ribbon(aes(ymin = pixc_val - 1.96 * sigma_est, 
+                  ymax = pixc_val + 1.96 * sigma_est), 
+              fill = "pink") +
+  geom_ribbon(aes(ymin = pixc_val - sigma_est, 
+                  ymax = pixc_val + sigma_est), 
+              fill = "#7780ff") +
+  geom_point(aes(y = pixc_val), shape = "+") +
+  geom_line(aes(y = gdem_val), color = "black") +
+  theme_bw()
+```
+
+## Height errors by node
+
+blue: 1-sigma; pink: 95% confidence interval
+
+```{r}
+valdata %>% 
+  dplyr::filter(variable == "height") %>% 
+  ggplot(aes(x = node_id)) +
+  geom_ribbon(aes(ymin = -1.96 * sigma_est, 
+                  ymax = 1.96 * sigma_est), fill = "pink") +
+  geom_ribbon(aes(ymin = -sigma_est, 
+                  ymax = sigma_est), fill = "#7780ff") +
+  geom_point(aes(y = pixc_err)) +
+  theme_bw()
+```
+
+## Bias-adjusted height errors by node
+
+blue: 1-sigma; pink: 95% confidence interval
+
+```{r}
+
+valdata %>% 
+  dplyr::filter(variable == "height") %>% 
+  mutate(err_shift = pixc_err - median(pixc_err, na.rm = TRUE)) %>% 
+  ggplot(aes(x = node_id)) +
+  geom_ribbon(aes(ymin = -1.96 * sigma_est, 
+                  ymax = 1.96 * sigma_est), fill = "pink") +
+  geom_ribbon(aes(ymin = -sigma_est, 
+                  ymax = sigma_est), fill = "#7780ff") +
+  geom_point(aes(y = err_shift)) +
+  theme_bw()
+```
+
+## Spatial trends in error
+
+
+```{r}
+valdata %>% 
+  ggplot(aes(x = node_id, y = pixc_err)) + 
+  geom_point() + 
+  facet_wrap(~variable, scales = "free") + 
+  stat_smooth()
+```
+
+
+
+## Spatial trends in error
+
+- long-wavelength variations in error are small relative to bias
+    - Except in lat/lon
+    
+```{r, fig.width = 6.5, fig.height = 4.5}
+valdata %>% 
+  ggplot(aes(x = node_id, y = pixc_err)) + 
+  geom_point() + 
+  facet_wrap(~variable, scales = "free") + 
+  stat_smooth()
+```
+
+
+## Next steps
+
+- Repeat on new dataset (2/11/2019)
+- Understand lat/lon errors, improve uncertainty estimate
+- Tackle heavy tail of width, area errors
+- Quantify long-wavelength height error (bias)
+- Understand width, area bias

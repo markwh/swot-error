@@ -1,17 +1,19 @@
-outdir,indir,priordb,case,pass,bndry_cond,smearing,land_sig0,water_sig0,notes
-./output/sac02,$SACDIR2,$PRIORLOC1,Sacramento,249,109,50m,-5dB,10dB,
-./output/sac03,$SACDIR3,$PRIORLOC1,Sacramento,249,109,50m,68 pctile,3dB wind calc,darkwater
-./output/sac04,$SACDIR4,$PRIORLOC1,Sacramento,249,109,50m,-100dB,3dB wind calc,darkwater
-./output/sac05,$SACDIR5,$PRIORLOC1,Sacramento,249,109,50m,-100dB,10dB,
-./output/sac06,$SACDIR6,$PRIORLOC1,Sacramento,249,220,50m,-5dB,10dB,
-./output/sac07,$SACDIR7,$PRIORLOC1,Sacramento,249,220,50m,68 pctile,3dB wind calc,
-./output/sac08,$SACDIR8,$PRIORLOC1,Sacramento,249,220,50m,-100dB,3dB wind calc,
-./output/sac09,$SACDIR9,$PRIORLOC1,Sacramento,249,220,50m,-100dB,10dB,
-./output/sac10,$SACDIR2,$PRIORLOC2,Sacramento,249,109,50m,-5dB,10dB,
-./output/sac11,$SACDIR3,$PRIORLOC2,Sacramento,249,109,50m,68 pctile,3dB wind calc,
-./output/sac12,$SACDIR4,$PRIORLOC2,Sacramento,249,109,50m,-100dB,3dB wind calc,
-./output/sac13,$SACDIR5,$PRIORLOC2,Sacramento,249,109,50m,-100dB,10dB,
-./output/sac14,$SACDIR6,$PRIORLOC2,Sacramento,249,220,50m,-5dB,10dB,
-./output/sac15,$SACDIR7,$PRIORLOC2,Sacramento,249,220,50m,68 pctile,3dB wind calc,
-./output/sac16,$SACDIR8,$PRIORLOC2,Sacramento,249,220,50m,-100dB,3dB wind calc,
-./output/sac17,$SACDIR9,$PRIORLOC2,Sacramento,249,220,50m,-100dB,10dB,
+outroot,outno,fmtno,outdir,indir,priordb,case,pass,bndry_cond,smearing,land_sig0,water_sig0,notes
+./output/sac,1,01,./output/sac01,$SACDIR1,$PRIORLOC1,Sacramento,249,not_spec,not_spec,not_spec,not_spec,1/25/19 pixc from Brent
+./output/sac,2,02,./output/sac02,$SACDIR1,$PRIORLOC2,Sacramento,249,not_spec,not_spec,not_spec,not_spec,1/25/19 pixc from Brent
+./output/sac,3,03,./output/sac03,$SACDIR2,$PRIORLOC1,Sacramento,249,109,50m,-5dB,10dB,
+./output/sac,4,04,./output/sac04,$SACDIR3,$PRIORLOC1,Sacramento,249,109,50m,68 pctile,3dB wind calc,darkwater
+./output/sac,5,05,./output/sac05,$SACDIR4,$PRIORLOC1,Sacramento,249,109,50m,-100dB,3dB wind calc,darkwater
+./output/sac,6,06,./output/sac06,$SACDIR5,$PRIORLOC1,Sacramento,249,109,50m,-100dB,10dB,
+./output/sac,7,07,./output/sac07,$SACDIR6,$PRIORLOC1,Sacramento,249,220,50m,-5dB,10dB,
+./output/sac,8,08,./output/sac08,$SACDIR7,$PRIORLOC1,Sacramento,249,220,50m,68 pctile,3dB wind calc,
+./output/sac,9,09,./output/sac09,$SACDIR8,$PRIORLOC1,Sacramento,249,220,50m,-100dB,3dB wind calc,
+./output/sac,10,10,./output/sac10,$SACDIR9,$PRIORLOC1,Sacramento,249,220,50m,-100dB,10dB,
+./output/sac,11,11,./output/sac11,$SACDIR2,$PRIORLOC2,Sacramento,249,109,50m,-5dB,10dB,
+./output/sac,12,12,./output/sac12,$SACDIR3,$PRIORLOC2,Sacramento,249,109,50m,68 pctile,3dB wind calc,
+./output/sac,13,13,./output/sac13,$SACDIR4,$PRIORLOC2,Sacramento,249,109,50m,-100dB,3dB wind calc,
+./output/sac,14,14,./output/sac14,$SACDIR5,$PRIORLOC2,Sacramento,249,109,50m,-100dB,10dB,
+./output/sac,15,15,./output/sac15,$SACDIR6,$PRIORLOC2,Sacramento,249,220,50m,-5dB,10dB,
+./output/sac,16,16,./output/sac16,$SACDIR7,$PRIORLOC2,Sacramento,249,220,50m,68 pctile,3dB wind calc,
+./output/sac,17,17,./output/sac17,$SACDIR8,$PRIORLOC2,Sacramento,249,220,50m,-100dB,3dB wind calc,
+./output/sac,18,18,./output/sac18,$SACDIR9,$PRIORLOC2,Sacramento,249,220,50m,-100dB,10dB,

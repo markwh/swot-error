@@ -11,3 +11,5 @@ riverobs-output
 *.nc
 output
 *rsconnect
+*pycache*
+
