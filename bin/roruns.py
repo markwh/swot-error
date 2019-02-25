@@ -7,8 +7,8 @@ import glob
 import pandas
 import ast
 import netCDF4
+import shutil
 
-print("external packages imported!")
 import SWOTRiver.Estimate
 import RDF
 import bin.fake_pixc_from_gdem as fake_pixc_from_gdem # specify bin/ for now.
@@ -16,10 +16,12 @@ from SWOTRiver.products.pixcvec import L2PIXCVector
 
 def get_config(file = './config/ro-config.rdf', 
             priordb = None,
-            gdem = False):
+            gdem = False,
+            dilation = 0):
     config = RDF.RDF()
     config.rdfParse(file)
     config = dict(config)
+    config['preseg_dilation_iter'] = str(dilation)
     
     if priordb is not None:
         config['reach_db_path'] = priordb
@@ -32,11 +34,20 @@ def get_config(file = './config/ro-config.rdf',
     return config
 
 def simple_rivertile(pixc_file, out_riverobs_file,
-                     out_pixc_vector_file, config, debug = False):
+                     out_pixc_vector_file, config, delete=False, debug=False):
     """Simplified swot_pixc2rivertile funciton. 
     
     Largely copy-pasted from Alex's script. 
     """
+    
+    if (os.path.isfile(out_riverobs_file) or 
+            os.path.isfile(out_pixc_vector_file)):
+        if not delete:
+            print("Skipping for existing output.")
+            return
+        os.remove(out_riverobs_file)
+        os.remove(out_pixc_vector_file)
+
     # typecast most config values with eval since RDF won't do it for me
     # (excluding strings)
     for key in config.keys():
@@ -60,31 +71,28 @@ def simple_rivertile(pixc_file, out_riverobs_file,
 
     l2pixc_to_rivertile.rivertile_product.to_ncfile(out_riverobs_file)
 
-def get_gdem_pixc(indir):
-    pixc_file = indir + '/pixel_cloud.nc'
-    print(indir)
-    gdem_file = glob.glob(indir + '/gdem_truth*nc')[0]
-    gdem_pixc_file = 'fake_pixel_cloud.nc'
-    print(gdem_file)
-    print(pixc_file)
-    print(gdem_pixc_file)
-    fake_pixc_from_gdem.fake_pixc_from_gdem(gdem_file, 
-                                            pixc_file, gdem_pixc_file)
-    return gdem_pixc_file
 
-def rodryrun(outdir, indir, priordb, force = False):
+def get_gdem_pixc(indir, out_pixc = 'fake_pixel_cloud.nc'):
+    """Writes and returns a fake pixel cloud in the local directory."""
+    pixc_file = indir + '/pixel_cloud.nc'
+    gdem_file = glob.glob(indir + '/gdem_truth*nc')[0]
+    fake_pixc_from_gdem.fake_pixc_from_gdem(gdem_file, pixc_file, out_pixc)
+    return out_pixc
+
+def rodryrun(outdir, indir, priordb, delete = False):
     print("out: ", outdir)
     print("in: ", indir)
     print("prior: ", priordb)
 
-def rorun(outdir, indir, priordb, force = False):
+def rorun(outdir, indir, priordb, pixc_file_gdem=None, delete=False):
     """Do a single row's 2 riverobs runs."""
     outpath = os.path.abspath(os.path.expandvars(outdir))
     inpath = os.path.abspath(os.path.expandvars(indir))
     priorpath = os.path.abspath(os.path.expandvars(priordb))
 
     pixc_file = inpath + '/pixel_cloud.nc'
-    pixc_file_gdem = get_gdem_pixc(inpath)
+    if pixc_file_gdem is None:
+        pixc_file_gdem = get_gdem_pixc(inpath)
     
     # Create directory if necessary
     try: 
@@ -93,49 +101,95 @@ def rorun(outdir, indir, priordb, force = False):
         # directory exists
         pass
     
+    # output file names
     out_ro_file = outpath + '/rt.nc'
     out_pcv_file = outpath + '/pcv.nc'
     out_ro_file_gdem = outpath + '/rt_gdem.nc'
     out_pcv_file_gdem = outpath + '/pcv_gdem.nc'
+    # out_ro_file_dil = outpath + '/rt_dil.nc' # pre-seg dialation
+    # out_pcv_file_dil = outpath + '/pcv_dil.nc' # pre-seg dilation
+    out_ro_file_gdem_dil1 = outpath + '/rt_gdem_dil1.nc' # pre-seg dialation
+    out_pcv_file_gdem_dil1 = outpath + '/pcv_gdem_dil1.nc' # pre-seg dilation
+    out_ro_file_gdem_dil2 = outpath + '/rt_gdem_dil2.nc' # pre-seg dialation
+    out_pcv_file_gdem_dil2 = outpath + '/pcv_gdem_dil2.nc' # pre-seg dilation
+    out_ro_file_gdem_dil3 = outpath + '/rt_gdem_dil3.nc' # pre-seg dialation
+    out_pcv_file_gdem_dil3 = outpath + '/pcv_gdem_dil3.nc' # pre-seg dilation
+    out_ro_file_gdem_dil4 = outpath + '/rt_gdem_dil4.nc' # pre-seg dialation
+    out_pcv_file_gdem_dil4 = outpath + '/pcv_gdem_dil4.nc' # pre-seg dilation
+    
     
     config1 = get_config(priordb=priorpath, gdem=False)
     config2 = get_config(priordb=priorpath, gdem=True)
+    config3 = get_config(priordb=priorpath, gdem=True, dilation=1)
+    config4 = get_config(priordb=priorpath, gdem=True, dilation=2)
+    config5 = get_config(priordb=priorpath, gdem=True, dilation=3)
+    config6 = get_config(priordb=priorpath, gdem=True, dilation=4)
     
-    # do 2 separate runs--with and without gdem. 
+    # do 3 separate runs--with and without gdem, with and without dilation
     simple_rivertile(pixc_file=pixc_file, 
                      out_riverobs_file=out_ro_file,
                      out_pixc_vector_file=out_pcv_file, 
-                     config=config1)
-                     
+                     config=config1, delete=delete)
     simple_rivertile(pixc_file=pixc_file_gdem, 
                      out_riverobs_file=out_ro_file_gdem,
                      out_pixc_vector_file=out_pcv_file_gdem, 
-                     config=config2, debug = True)
+                     config=config2, delete=delete)
+    simple_rivertile(pixc_file=pixc_file_gdem, 
+                     out_riverobs_file=out_ro_file_gdem_dil1,
+                     out_pixc_vector_file=out_pcv_file_gdem_dil1, 
+                     config=config3, delete=delete)
+    simple_rivertile(pixc_file=pixc_file_gdem, 
+                     out_riverobs_file=out_ro_file_gdem_dil2,
+                     out_pixc_vector_file=out_pcv_file_gdem_dil2, 
+                     config=config4, delete=delete)
+    simple_rivertile(pixc_file=pixc_file_gdem, 
+                     out_riverobs_file=out_ro_file_gdem_dil3,
+                     out_pixc_vector_file=out_pcv_file_gdem_dil3, 
+                     config=config5, delete=delete)
+    simple_rivertile(pixc_file=pixc_file_gdem, 
+                     out_riverobs_file=out_ro_file_gdem_dil4,
+                     out_pixc_vector_file=out_pcv_file_gdem_dil4, 
+                     config=config6, delete=delete)
 
-def cleanup(pixc_file_gdem="fake_pixel_cloud.nc"):
-    os.unlink(pixc_file_gdem)
-    print("removed", pixc_file_gdem)
+def check_make_fake_pixc(fake_pixc_name, indir):
+    if (os.path.isfile(fake_pixc_name)):
+        return
+    inpath = os.path.abspath(os.path.expandvars(indir))
+    in_pixc = inpath + '/pixel_cloud.nc'
+    get_gdem_pixc(inpath, out_pixc = fake_pixc_name)
 
 def main():
     print("running!")
     parser = argparse.ArgumentParser()
     parser.add_argument('run_csv', type=str, 
         help='csv file with run info')
-    parser.add_argument('--force', help='force run to overwrite existing')
+    parser.add_argument('--delete', help='delete and rewrite if existing?')
     
     args = parser.parse_args()
-    # print(args)
-    # print(type(args))
-    # print(args.run_csv)
     
-    # read csv 
+    # read the csv
     rundf = pandas.read_csv(args.run_csv)
+    
+    # For fake pixel clouds--unique combinations of case, flow, pass
+    unqdf = rundf[['case', 'pass', 'bndry_cond']].drop_duplicates()
+    unqdf['fake_ind'] = [str(x) for x in range(1, len(unqdf) + 1)]
+    rundf = rundf.merge(unqdf, on=['pass','bndry_cond','case'], how='left')
     
     # iterate over rows of data frame
     for index, row in rundf.iterrows():
-        rorun(row['outdir'], row['indir'], row['priordb'])
-        cleanup()
-
+        fakefile='fake_pixc' + row['fake_ind'] + '.nc'
+        # if fake pixc exists, use it--otherwise make it. 
+        check_make_fake_pixc(fakefile, row['indir'])
+                
+        rorun(outdir=row['outdir'], indir=row['indir'], priordb=row['priordb'], 
+              pixc_file_gdem=fakefile, delete=args.delete)
+              
+        shutil.copy(fakefile, row['outdir'] + '/fake_pixc.nc')
+    
+    # cleanup (fake pixel clouds are copied into indiv. directories)
+    for index, row in unqdf.iterrows():
+        fakefile='fake_pixc' + row['fake_ind'] + '.nc'
+        os.remove(fakefile)
 
 if  __name__ == "__main__":
     main()

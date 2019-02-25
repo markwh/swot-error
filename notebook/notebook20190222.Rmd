@@ -1,0 +1,169 @@
+---
+title: "notebook20190222"
+author: "Mark Hagemann"
+date: "2/22/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+Building on yesterday's results. Try to get a flag for when the "truth" might not be "true". 
+
+```{r}
+dir15 <- "../output/sac15"
+val1 <- rt_valdata(dir15, rtname = "rt_gdem.nc", gdname = "rt_gdem_dil1.nc", keep_na_vars = TRUE)
+
+rt_val_hist(dir15, vars = "width", rtname = "rt_gdem.nc", 
+            gdname = "rt_gdem_dil1.nc", keep_na_vars = TRUE)
+
+rt_val_hist(dir15, vars = "width", rtname = "rt_gdem.nc", 
+            gdname = "rt_gdem_dil2.nc", keep_na_vars = TRUE)
+```
+
+Need to get node indices for nodes with large width disagreement between non-dilated, dilated estimates.
+
+```{r}
+val1 <- rt_valdata(dir15, rtname = "rt_gdem_dil1.nc", gdname = "rt_gdem.nc", 
+                   keep_na_vars = TRUE) %>% 
+    filter(variable == "width") %>% 
+    transmute(node_id, pct_disagree = abs(pixc_err) / (pixc_val) * 100) %>% 
+    arrange(desc(pct_disagree))
+val2 <- rt_valdata(dir15, rtname = "rt_gdem_dil2.nc", gdname = "rt_gdem.nc", 
+                   keep_na_vars = TRUE) %>% 
+    filter(variable == "width") %>% 
+    transmute(node_id, pct_disagree = abs(pixc_err) / (pixc_val) * 100) %>% 
+    arrange(desc(pct_disagree))
+val3 <- rt_valdata(dir15, rtname = "rt_gdem_dil3.nc", gdname = "rt_gdem.nc", 
+                   keep_na_vars = TRUE) %>% 
+    filter(variable == "width") %>% 
+    transmute(node_id, pct_disagree = abs(pixc_err) / (pixc_val) * 100) %>% 
+    arrange(desc(pct_disagree))
+val4 <- rt_valdata(dir15, rtname = "rt_gdem_dil4.nc", gdname = "rt_gdem.nc", 
+                   keep_na_vars = TRUE) %>% 
+    filter(variable == "width") %>% 
+    transmute(node_id, pct_disagree = abs(pixc_err) / (pixc_val) * 100) %>% 
+    arrange(desc(pct_disagree))
+
+```
+
+Now plot the original node errors against pct_disagree. 
+
+```{r}
+valorig <- rt_valdata(dir15) %>% 
+  filter(variable == "width") %>% 
+  transmute(node_id, variable, pixc_val, pixc_err, 
+            pct_err = pixc_err / gdem_val, gdem_val, sigma_est)
+
+valorig %>% 
+  left_join(val1, by = "node_id") %>% 
+  glimpse() %>% 
+  filter(node_id != 573) %>% 
+  ggplot(aes(x = pct_disagree, y = pixc_err)) +
+  geom_point() + 
+  xlab("% gdem disagreement vs no-dilation") +
+  ylab("node width error (vs. gdem-derived)") +
+  ggtitle("dilation=1 gdem disagreement as error predictor")
+
+valorig %>% 
+  left_join(val2, by = "node_id") %>% 
+  glimpse() %>% 
+  filter(node_id != 573) %>% 
+  ggplot(aes(x = pct_disagree, y = pixc_err)) +
+  geom_point() + 
+  xlab("% gdem disagreement vs no-dilation") +
+  ylab("node width error (vs. gdem-derived)") +
+  ggtitle("dilation=2 gdem disagreement as error predictor")
+
+valorig %>% 
+  left_join(val3, by = "node_id") %>% 
+  glimpse() %>% 
+  filter(node_id != 573) %>% 
+  ggplot(aes(x = pct_disagree, y = pixc_err)) +
+  geom_point() + 
+  xlab("% gdem disagreement vs no-dilation") +
+  ylab("node width error (vs. gdem-derived)") +
+  ggtitle("dilation=3 gdem disagreement as error predictor")
+
+valorig %>% 
+  left_join(val4, by = "node_id") %>% 
+  glimpse() %>% 
+  filter(node_id != 573) %>% 
+  ggplot(aes(x = pct_disagree, y = pixc_err)) +
+  geom_point() + 
+  xlab("% gdem disagreement vs no-dilation") +
+  ylab("node width error (vs. gdem-derived)") +
+  ggtitle("dilation=4 gdem disagreement as error predictor")
+
+```
+
+
+```{r}
+valorig %>% 
+  filter(!(node_id %in% c(val2$node_id[1:6], 573))) %>% 
+  rt_val_hist()
+```
+
+
+```{r}
+valorig %>% 
+  filter(!(node_id %in% c(val2$node_id[1:6], 573))) %>% 
+  summarize(bias = mean(pixc_err), median = median(pixc_err))
+
+valorig %>% 
+  filter(!(node_id %in% c(573))) %>% 
+  summarize(bias = mean(pixc_err), median = median(pixc_err))
+```
+
+Here are heights:
+
+```{r}
+valorig_h <- rt_valdata(dir15) %>% 
+  filter(variable == "height") %>% 
+  transmute(node_id, variable, pixc_val, pixc_err, 
+            pct_err = pixc_err / gdem_val, gdem_val, sigma_est)
+
+
+valorig_h %>% 
+  left_join(val1, by = "node_id") %>% 
+  glimpse() %>% 
+  filter(node_id != 573) %>% 
+  ggplot(aes(x = pct_disagree, y = pixc_err)) +
+  geom_point() + 
+  xlab("% gdem disagreement vs no-dilation") +
+  ylab("node height error (vs. gdem-derived)") +
+  ggtitle("dilation=1 gdem disagreement as error predictor")
+
+valorig_h %>% 
+  left_join(val2, by = "node_id") %>% 
+  glimpse() %>% 
+  filter(node_id != 573) %>% 
+  ggplot(aes(x = pct_disagree, y = pixc_err)) +
+  geom_point() + 
+  xlab("% gdem disagreement vs no-dilation") +
+  ylab("node height error (vs. gdem-derived)") +
+  ggtitle("dilation=2 gdem disagreement as error predictor")
+
+valorig_h %>% 
+  left_join(val3, by = "node_id") %>% 
+  glimpse() %>% 
+  filter(node_id != 573) %>% 
+  ggplot(aes(x = pct_disagree, y = pixc_err)) +
+  geom_point() + 
+  xlab("% gdem disagreement vs no-dilation") +
+  ylab("node height error (vs. gdem-derived)") +
+  ggtitle("dilation=3 gdem disagreement as error predictor")
+
+valorig_h %>% 
+  left_join(val4, by = "node_id") %>% 
+  glimpse() %>% 
+  filter(node_id != 573) %>% 
+  ggplot(aes(x = pct_disagree, y = pixc_err)) +
+  geom_point() + 
+  xlab("% gdem disagreement vs no-dilation") +
+  ylab("node height error (vs. gdem-derived)") +
+  ggtitle("dilation=4 gdem disagreement as error predictor")
+```
+

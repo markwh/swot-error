@@ -1,0 +1,114 @@
+---
+title: 'Sac width compare v2: dilation'
+author: "Mark Hagemann"
+date: "2/21/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE, cache = TRUE)
+
+opts_knit$set(root.dir = "../")
+```
+
+```{r, cache = FALSE}
+library(ProjectTemplate)
+library(leaflet)
+load.project()
+devtools::load_all("../rivertile")
+```
+
+Recall the following issue, where large outliers occurred in the node-level width errors. 
+
+
+```{r}
+ridnode <- function(gg) {
+  gg$data <- dplyr::filter(gg$data, node_id != 573)
+  gg
+}
+
+dir15 <- "output/sac15"
+# rt_valdata(dir15) %>% dplyr::filter(variable == "width") %>% arrange(pixc_err)
+rt_val_hist(dir15, vars = c("width")) %>% 
+  ridnode()
+```
+
+These are due to locations where the finer-resolution gdem pixc water search stops before it should, as in the following plot of underlying pixcvec pixels for 2 nodes (gdem-derived red, pixc-derived blue):
+
+
+```{r}
+plotnodes <- c(290, 303)
+val_map_node(dir15, nodes = plotnodes)
+```
+
+Brent implemented a fix wherein RiverObs has an option giving the number of iterations for a binary dilation before segmentation. Or something. Here's the result for these nodes after setting this option to 1:
+
+```{r}
+val_map_node(dir15, nodes = plotnodes, pcv2 = "pcv_gdem_dil1.nc")
+```
+
+The southern node gdem expanded slightly, but it's still a much smaller width--especially in the northern node. 
+
+What if we set the dilation option to 2?
+
+```{r}
+val_map_node(dir15, nodes = plotnodes, pcv2 = "pcv_gdem_dil2.nc")
+```
+
+That's certainly closer! How does that make the overall histogram of node-level height errors look?
+
+```{r}
+rt_val_hist(dir15, vars = c("width"), gdname = "rt_gdem_dil2.nc") %>% 
+  ridnode()
+
+```
+
+It's fixed some high outliers, but added some pretty gnarly low outliers. Observe:
+
+```{r}
+valdata1 <- rt_valdata(dir15)
+valdata2 <- rt_valdata(dir15, gdname = "rt_gdem_dil1.nc")
+valdata3 <- rt_valdata(dir15, gdname = "rt_gdem_dil2.nc")
+valdata4 <- rt_valdata(dir15, rtname = "rt_dil.nc", gdname = "rt_gdem_dil2.nc")
+
+
+# val_map_node(dir15, nodes = badnodes(valdata1))
+# val_map_node(dir15, nodes = badnodes(valdata2), 
+#              pcv1 = "pcv.nc", pcv2 = "pcv_gdem_dil1.nc")
+val_map_node(dir15, nodes = badnodes(valdata3, which = "min", n = 2), 
+             pcv1 = "pcv.nc", pcv2 = "pcv_gdem_dil2.nc")
+# val_map_node(dir15, nodes = badnodes(valdata4), 
+#              pcv1 = "pcv_dil.nc", pcv2 = "pcv_gdem_dil2.nc")
+```
+
+That's actually both nodes--they're adjacent. 
+
+Maybe adding a dilation option (of 1) to the original pixel cloud will help. 
+
+```{r}
+val_map_node(dir15, nodes = badnodes(valdata3, which = "min", n = 2),
+             pcv1 = "pcv_dil.nc", pcv2 = "pcv_gdem_dil2.nc")
+```
+
+Sure enough. Here is the nodel-level width error histogram using a dilation option of 1 for the pixel_cloud and 2 for the gdem truth pixel_cloud. 
+
+
+```{r}
+val4 <- rt_val_hist(dir15, vars = c("width"), 
+                    rtname = "rt_dil.nc", gdname = "rt_gdem_dil2.nc") %>% 
+  ridnode()
+val4
+```
+
+Now high outliers agian! Here are the 4 worst high-oulier nodes:
+
+```{r}
+val_map_node(dir15, nodes = badnodes(valdata4, which = "max", n = 4),
+             pcv1 = "pcv_dil.nc", pcv2 = "pcv_gdem_dil2.nc")
+```
+
+
+## Conclusion
+
+The pre-segmentation dilation option does what it's supposed to, but it is a coarse adjustment with often adverse consequences. It's hard for me to see how to tune this a priori to get the best results. 

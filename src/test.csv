@@ -1,2 +1,2 @@
-﻿outroot,outno,fmtno,outdir,indir,priordb,case,pass,bndry_cond,smearing,land_sig0,water_sig0,notes
-./output/sac,15,15,./foodir,$SACDIR6,$PRIORLOC2,Sacramento,249,220,50m,-5dB,10dB,
+﻿outroot,outno,fmtno,outdir,indir,priordb,case,pass,bndry_cond,smearing,land_sig0,water_sig0
+./output/sac,15,15,./output/sac15,$SACDIR6,$PRIORLOC2,Sacramento,249,220,50m,-5dB,10dB
