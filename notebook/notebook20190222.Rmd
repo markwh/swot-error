@@ -15,11 +15,12 @@ Building on yesterday's results. Try to get a flag for when the "truth" might no
 ```{r}
 dir15 <- "../output/sac15"
 val1 <- rt_valdata(dir15, rtname = "rt_gdem.nc", gdname = "rt_gdem_dil1.nc", keep_na_vars = TRUE)
+val2 <- rt_valdata(dir15, rtname = "rt_gdem.nc", gdname = "rt_gdem_dil2.nc", keep_na_vars = TRUE)
 
-rt_val_hist(dir15, vars = "width", rtname = "rt_gdem.nc", 
+rt_val_hist(val1, vars = "width", rtname = "rt_gdem.nc", 
             gdname = "rt_gdem_dil1.nc", keep_na_vars = TRUE)
 
-rt_val_hist(dir15, vars = "width", rtname = "rt_gdem.nc", 
+rt_val_hist(val2, vars = "width", rtname = "rt_gdem.nc", 
             gdname = "rt_gdem_dil2.nc", keep_na_vars = TRUE)
 ```
 
@@ -103,6 +104,10 @@ valorig %>%
 ```{r}
 valorig %>% 
   filter(!(node_id %in% c(val2$node_id[1:6], 573))) %>% 
+  rt_val_hist()
+
+valorig %>% 
+  filter(!(node_id %in% c(573))) %>%
   rt_val_hist()
 ```
 

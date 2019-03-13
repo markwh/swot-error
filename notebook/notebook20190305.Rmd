@@ -1,0 +1,64 @@
+---
+title: "notebook20190305"
+author: "Mark Hagemann"
+date: "3/5/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Trying to get a hypothesis test going. 
+
+```{r}
+foo <- rt_valdata("../output/sac15")
+```
+
+Need relative errors.
+
+```{r}
+foo %>% 
+  mutate(relerr = pixc_err / sigma_est) %>% 
+  group_by(variable) %>%
+  summarize(meanrelerr = mean(relerr, na.rm = TRUE), 
+            teststat = sum((relerr - meanrelerr)^2, na.rm = TRUE),
+            df = sum(!is.na(relerr)) - 1) %>% 
+  mutate(pval = 2 * (1 - pchisq(teststat, df = df)))
+```
+
+Great, I think I'm ready to put this into a function
+
+```{r}
+rt_hyptest <- function(valdata, debias = TRUE) {
+  out <- valdata %>% 
+    mutate(relerr = pixc_err / sigma_est) %>% 
+    group_by(variable) %>%
+    mutate(meanrelerr = mean(relerr, na.rm = TRUE))
+  
+  if (!debias) out[["meanrelerr"]] <- 0
+  
+  out <- summarize(out, 
+              teststat = sum((relerr - meanrelerr)^2, na.rm = TRUE),
+              df = sum(!is.na(relerr)) - 1) %>% 
+    mutate(pval = 2 * (1 - pchisq(teststat, df = df)))
+  out
+}
+```
+
+## Checking out Brent's new gdem preprocessor. 
+
+- Check it out using a couple of runs. 
+    - Take 15 and 18. 
+    - just copy the folders and run the preprocessor on the gdem.
+    
+See what's different in the raw gdem file.
+
+```{r}
+gdem1 <- "D:/data/sac-simulator-output/tile-Sac-23Jan2019/tile-Sac-23Jan2019/gdem_truth.LeftSwath.nc"
+gdem2 <- "D:/data/sac-simulator-output/tile-Sac-23Jan2019/tile-Sac-23Jan2019/gdem_preproc.nc"
+
+gdemdf1 <- pixc_read(gdem1)
+
+```
+

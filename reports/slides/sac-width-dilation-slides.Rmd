@@ -1,0 +1,212 @@
+---
+title: 'Sac, dilation, truth flagging'
+author: "Mark Hagemann"
+date: "2/26/2019"
+output: 
+  ioslides_presentation:
+    incremental: true
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE, cache = TRUE)
+
+opts_knit$set(root.dir = "../../")
+```
+
+```{r, cache = FALSE}
+library(ProjectTemplate)
+library(leaflet)
+load.project()
+devtools::load_all("../rivertile")
+```
+
+## Original issue
+
+Large outliers in the node-level width errors. 
+
+
+```{r}
+ridnode <- function(gg) {
+  gg$data <- dplyr::filter(gg$data, node_id != 573)
+  gg
+}
+
+
+dir15 <- "output/sac15"
+valdata <- rt_valdata(dir15)
+# rt_valdata(dir15) %>% dplyr::filter(variable == "width") %>% arrange(pixc_err)
+rt_val_hist(valdata, vars = c("width")) %>% 
+  ridnode()
+```
+
+## Diagnosis
+
+- Finer-resolution gdem pixc water search stops before it should:
+
+
+```{r}
+library(leaflet)
+plotnodes <- c(290, 303)
+val_map_node(dir15, nodes = plotnodes)
+```
+
+## Dilation option = 1
+
+- southern node gdem expanded slightly, still does not match
+
+```{r}
+val_map_node(dir15, nodes = plotnodes, pcv2 = "pcv_gdem_dil1.nc")
+```
+
+## Dilation = 2
+
+- Now a better match between gdem and pixel_cloud
+
+```{r}
+val_map_node(dir15, nodes = plotnodes, pcv2 = "pcv_gdem_dil2.nc")
+```
+
+## Width error histogram using gdem dilation = 2
+
+- Now we have outliers in the other direction
+
+```{r}
+
+rt_valdata(dir15, gdname = "rt_gdem_dil2.nc") %>% 
+  rt_val_hist(vars = c("width")) %>% 
+  ridnode()
+
+```
+
+
+## Worst outliers using dilation=2 gdem
+
+- This is actually 2 different nodes. 
+
+```{r}
+valdata1 <- rt_valdata(dir15)
+valdata2 <- rt_valdata(dir15, gdname = "rt_gdem_dil1.nc")
+valdata3 <- rt_valdata(dir15, gdname = "rt_gdem_dil2.nc")
+valdata4 <- rt_valdata(dir15, rtname = "rt_dil.nc", gdname = "rt_gdem_dil2.nc")
+
+val1 <- rt_valdata(dir15, rtname = "rt_gdem_dil1.nc", gdname = "rt_gdem.nc", 
+                   keep_na_vars = TRUE) %>% 
+    filter(variable == "width") %>% 
+    transmute(node_id, pct_disagree = abs(pixc_err) / (pixc_val) * 100) %>% 
+    arrange(desc(pct_disagree))
+val2 <- rt_valdata(dir15, rtname = "rt_gdem_dil2.nc", gdname = "rt_gdem.nc", 
+                   keep_na_vars = TRUE) %>% 
+    filter(variable == "width") %>% 
+    transmute(node_id, pct_disagree = abs(pixc_err) / (pixc_val) * 100) %>% 
+    arrange(desc(pct_disagree))
+val3 <- rt_valdata(dir15, rtname = "rt_gdem_dil3.nc", gdname = "rt_gdem.nc", 
+                   keep_na_vars = TRUE) %>% 
+    filter(variable == "width") %>% 
+    transmute(node_id, pct_disagree = abs(pixc_err) / (pixc_val) * 100) %>% 
+    arrange(desc(pct_disagree))
+val4 <- rt_valdata(dir15, rtname = "rt_gdem_dil4.nc", gdname = "rt_gdem.nc", 
+                   keep_na_vars = TRUE) %>% 
+    filter(variable == "width") %>% 
+    transmute(node_id, pct_disagree = abs(pixc_err) / (pixc_val) * 100) %>% 
+    arrange(desc(pct_disagree))
+
+
+
+# val_map_node(dir15, nodes = badnodes(valdata1))
+# val_map_node(dir15, nodes = badnodes(valdata2), 
+#              pcv1 = "pcv.nc", pcv2 = "pcv_gdem_dil1.nc")
+val_map_node(dir15, nodes = badnodes(valdata3, which = "min", n = 2), 
+             pcv1 = "pcv.nc", pcv2 = "pcv_gdem_dil2.nc")
+# val_map_node(dir15, nodes = badnodes(valdata4), 
+#              pcv1 = "pcv_dil.nc", pcv2 = "pcv_gdem_dil2.nc")
+```
+
+## Instead of correcting gdem, flag questionable nodes
+
+```{r}
+valorig <- rt_valdata(dir15) %>% 
+  dplyr::filter(variable == "width") %>% 
+  transmute(node_id, variable, pixc_val, pixc_err, 
+            pct_err = pixc_err / gdem_val, gdem_val, sigma_est)
+
+valorig %>% 
+  left_join(val1, by = "node_id") %>% 
+  #glimpse() %>% 
+  dplyr::filter(node_id != 573) %>% 
+  ggplot(aes(x = pct_disagree, y = pixc_err)) +
+  geom_point() + 
+  xlab("% gdem disagreement vs no-dilation") +
+  ylab("node width error (vs. gdem-derived)") +
+  ggtitle("dilation=1 gdem disagreement as error predictor")
+```
+
+## Instead of correcting gdem, flag questionable nodes
+
+```{r}
+valorig %>% 
+  left_join(val2, by = "node_id") %>% 
+  #glimpse() %>% 
+  dplyr::filter(node_id != 573) %>% 
+  ggplot(aes(x = pct_disagree, y = pixc_err)) +
+  geom_point() + 
+  xlab("% gdem disagreement vs no-dilation") +
+  ylab("node width error (vs. gdem-derived)") +
+  ggtitle("dilation=2 gdem disagreement as error predictor")
+```
+
+## Instead of correcting gdem, flag questionable nodes
+
+```{r}
+valorig %>% 
+  left_join(val3, by = "node_id") %>% 
+  #glimpse() %>% 
+  dplyr::filter(node_id != 573) %>% 
+  ggplot(aes(x = pct_disagree, y = pixc_err)) +
+  geom_point() + 
+  xlab("% gdem disagreement vs no-dilation") +
+  ylab("node width error (vs. gdem-derived)") +
+  ggtitle("dilation=3 gdem disagreement as error predictor")
+```
+
+## Instead of correcting gdem, flag questionable nodes
+
+```{r}
+valorig %>% 
+  left_join(val4, by = "node_id") %>% 
+  #glimpse() %>% 
+  dplyr::filter(node_id != 573) %>% 
+  ggplot(aes(x = pct_disagree, y = pixc_err)) +
+  geom_point() + 
+  xlab("% gdem disagreement vs no-dilation") +
+  ylab("node width error (vs. gdem-derived)") +
+  ggtitle("dilation=4 gdem disagreement as error predictor")
+```
+
+## Flag definition
+
+- Best comparison: 
+    - dilation=0 gdem, dilation=2 gdem
+- Threshold for flag: 
+    - 15% difference (relative to larger width)
+- Sacramento results:
+    - Remove 6 points out of 366
+    - 3 are really outliers (50% false-positive rate)
+    - Bias (across all nodes) goes from 14.7m to 11.9m 
+
+## Histograms
+
+```{r}
+valorig %>% 
+  dplyr::filter(!(node_id %in% c(val2$node_id[1:6], 573))) %>% 
+  rt_val_hist() + ggtitle("Flagged nodes removed")
+```
+
+## Histograms
+
+```{r}
+valorig %>% 
+  dplyr::filter(!(node_id %in% c(573))) %>%
+  rt_val_hist() + ggtitle("Before flagging")
+```
+
