@@ -1,2 +1,4 @@
-﻿outroot,outno,fmtno,outdir,indir,priordb,case,pass,bndry_cond,smearing,land_sig0,water_sig0
-./output/sac,15,15,./output/sac15,$SACDIR6,$PRIORLOC2,Sacramento,249,220,50m,-5dB,10dB
+﻿outroot,outno,fmtno,outdir,indir,priordb,case,pass,bndry_cond,smearing,land_sig0,water_sig0,gdem_name,notes
+./output/sac,15,15,./output/sac15,$SACDIR6,$PRIORLOC2,Sacramento,249,220,50m,-5dB,10dB,gdem_truth.LeftSwath.nc,
+./output/sac,18,18,./output/sac18,$SACDIR9,$PRIORLOC2,Sacramento,249,220,50m,-100dB,10dB,gdem_truth.LeftSwath.nc,
+./output/sac,33,33,./output/sac33,$SACDIR6,$PRIORLOC2,Sacramento,249,220,50m,-5dB,10dB,gdem_preproc.nc,
