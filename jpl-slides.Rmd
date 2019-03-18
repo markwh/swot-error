@@ -1,0 +1,132 @@
+---
+title: "Uncertainty Objectives"
+author: "Mark Hagemann"
+date: "3/15/2019"
+output: 
+  ioslides_presentation:
+    incremental: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, cache = TRUE, message = FALSE, warning = FALSE)
+devtools::load_all("../rivertile")
+library(knitr)
+library(dplyr)
+library(leaflet)
+```
+
+```{r}
+dir1 <- "../swot-error/output/sac15"
+dir2 <- "../swot-error/output/sac18"
+dir3 <- "../swot-error/output/sac33"
+dir4 <- "../swot-error/output/sac36"
+dir5 <- "../swot-error/output/sac14"
+```
+
+
+## This session
+
+- Articulate objectives for uncertainty work
+- Identify data sets to be used
+
+## Motivation
+
+- We estimate uncertainty in order to communicate expected precision to users.
+
+- We validate uncertainty estimates in order to determine reliability of models that produce uncertainty estimates.
+
+## Goals, objectives
+
+- Model uncertainty to the extent it can be determined between features and times
+  - One apprach: just use error budget as uncertainty estimate
+	- We can do better!
+- Validate uncertainty estimates against (synthetic) truth data in a representative sampling of conditions
+    - Agreement should hold across different flow condtions, river morphologies, orientation and position in swath, etc.
+    - If uncertainty estimates fail to capture error behavior, update error model accordingly, or flag
+- Decompose errors into random (errors diminish predictably with aggregation) and systematic (diminish slowly or not at all)
+
+## Current status
+
+- Brent's models of random error for height, width, area are implemented in RiverObs
+- Layover error model (Curtis) not yet implemented in RiverObs.
+- Validated against nodes for a single case (Sacramento), single pass, 2 flow conditions
+
+## Current status
+
+```{r}
+rt_valdata(dir5) %>% rt_val_hist(scale = TRUE, curve = TRUE,
+                                 vars = c("height", "height2", "width", "area_total"))
+
+```
+
+
+## Datasets required
+
+- Representative sampling of:
+	- nodes
+	- reaches
+	- layover conditions
+	- Reach geometry (meanders, etc.)
+- All this can be done with SLC simulator!
+
+## Open questions
+
+- How to treat layover uncertainty in RiverObs?
+- How to treat systematic errors in RiverObs?
+    - Contstant from error budget?
+- How to determine "truth" for purposes of uncertainty validation?
+- Is it OK to overstate the uncertainty?
+
+## Truth data matters
+
+From an algorithm performance standpoint, truth is what we expect the algorithm to detect. 
+
+- "practical" truth, not "ideal" truth
+- Not trivial to produce this!
+
+## Truth data example
+
+```{r}
+include_graphics("fig/sac_satellite1.png")
+```
+
+## Truth data example
+
+```{r}
+val_map_node(dir2, nodes = "451")
+```
+
+## Truth data example
+
+```{r}
+val_map_node(dir4, nodes = "451", pcv2 = "pcv_gdem_dil1.nc")
+```
+
+
+## Truth data example
+
+```{r}
+val_map_node(dir2, nodes = "451", pcv2 = "pcv_gdem_dil1.nc")
+```
+
+
+
+## Truth data example
+
+```{r}
+val_map_node(dir2, nodes = "329", pcv2 = "pcv_gdem_dil1.nc")
+```
+
+
+## Truth data example
+
+```{r}
+include_graphics("fig/sac_satellite2.png")
+```
+
+## Truth data
+
+Current approach: flag out nodes with "unstable" truth values 
+
+- Ignores hardest cases
+- Overstates width, area accuracy

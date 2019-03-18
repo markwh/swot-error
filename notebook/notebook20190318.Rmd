@@ -1,0 +1,19 @@
+---
+title: "notebook20190318"
+author: "Mark Hagemann"
+date: "3/18/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Working on getting pixc read in, implementing this for validation app. 
+
+I may want to use reticulate package and python netcdf. 
+
+```{r}
+
+```
+
