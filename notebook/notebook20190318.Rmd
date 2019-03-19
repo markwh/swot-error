@@ -14,6 +14,158 @@ Working on getting pixc read in, implementing this for validation app.
 I may want to use reticulate package and python netcdf. 
 
 ```{r}
+library(fs)
+datadir <- "/media/removable/USB Drive/swot-error-data/cycle_0001_pass_0249_001L_nlcd-5dB_water10dB_50m_CBE/"
+
+ncpath <- path(datadir, "pixel_cloud.nc")
+
+pixcnc <- nc_open(ncpath)
+
+foo <- pixc_read(ncpath)
 
 ```
+
+
+
+```{r}
+library(leaflet)
+classpal <- colorNumeric("viridis", domain = 1:4)
+
+foo %>% 
+  sample_n(1000) %>% 
+  leaflet() %>% 
+  addTiles() %>% 
+  addCircleMarkers(color = ~classpal(classification))
+
+```
+
+Before I resort to reticulating with python, do what I can in R. 
+
+- I thought pixcvec had 1:1 correspondence with pixc, but there are many more points in pixc. Maybe pixcvec stores an index? Looks like!
+
+```{r}
+bar2 <- foo %>% 
+  dplyr::select(azimuth_index, range_index, classification,
+                latitude, longitude) %>% 
+  right_join(bar)
+```
+
+OK, so that's actually pretty straightforward. What's next?
+
+- I'll have to figure out how to reference (or change) file location for pixc. 
+    - Store in an R-readable (txt? md?) within each output folder?
+    - copy pixc into each output folder?
+    - symbolic link in output folder?
+        - Won't work on Windows
+- Exactly what functionality do I want?
+    - For a set of selected nodes...
+    - Plot pixc with classification
+        - Based on proximity
+        - Based on node assignment (differentiate from proximity using outline color?)
+    - Plot pixcvec with classification
+        - proximity-based
+        - node assignment based
+- Under the hood
+    - Read in pixc and fake pixc when folder data gets read in
+        - lat, lon, classification, others?
+    - Join to pixcvec on the fly?
+
+Try fixing `pixc_read_gdem`
+
+```{r}
+gdpath <- path(datadir, "gdem_preproc.nc")
+
+```
+
+- It may be worth defining my own funciton for reading in subsets serially. 
+    - Be sure to include status indicator so I can interrupt if it's prohibitively slow. 
+    - 
+    
+    
+```{r}
+nc <- nc_open(gdpath)
+varid <- "latitude"
+inds <- head(waterpix, 100)
+
+ncvar_ss <- function(nc, varid=NA, inds) {
+  if (length(dim(inds)) > 2) stop("dimensionality > 2 not supported.")
+  
+  indlist <- split(inds[, 1], f = inds[, 2])
+
+  pb <- progress::progress_bar$new(total = length(indlist))
+  pb$tick(0)
+  
+  vals <- list()
+  for (i in 1:length(indlist)) {
+    pb$tick()
+    vals[[i]] <- ncvar_ss_1d(nc, varid = varid, indvec = indlist[[i]], 
+                         inds2 = as.numeric(names(indlist)[i]))
+  }
+  out <- unlist(vals)
+  out
+}
+
+# Check for inefficiencies of this method. Result should be close to 1. 
+check_ineff <- function(indmat) {
+  num1 <- nrow(indmat)
+  num2 <- as.data.frame(indmat) %>% 
+    group_by(col) %>% 
+    summarize(nret = max(row) - min(row) + 1) %>% 
+    summarize(sum = sum(nret)) %>% 
+    `[[`("sum")
+  out <- num2 / num1
+  out
+}
+
+indvec <- indlist[[1]]
+inds2 <- as.numeric(names(indlist)[1])
+
+
+ncvar_ss_1d <- function(nc, varid=NA, indvec, inds2 = NULL) {
+  stopifnot(is.numeric(indvec) && is.vector(indvec))
+  
+  minind <- min(indvec)
+  maxind <- max(indvec)
+  indcnt <- maxind - minind + 1
+  newinds <- indvec - minind + 1
+  
+  if (!is.null(inds2)) {
+    minind <- cbind(minind, inds2)
+    indcnt <- cbind(indcnt, 1)
+  }
+  
+  out <- ncvar_get(nc, varid = varid, start = minind, count = indcnt)
+  
+  out <- as.vector(out[newinds])
+  out
+}
+
+
+```
+
+
+test it!
+
+```{r}
+nc <- nc_open(gdpath)
+varid <- "latitude"
+inds <- head(waterpix, 100)
+
+latvec <- ncvar_ss(nc, "latitude", waterpix)
+ltypevec <- ncvar_ss(nc, "landtype", inds = waterpix)
+```
+
+Appears to work. Now I can modify pixc_read_gdem, etc. 
+
+
+```{r}
+gdempixc <- path("../output/sac15/fake_pixc.nc")
+
+foo <- pixc_read(gdempixc)
+
+foo <- pixcvec_read("../output/sac15/pcv_gdem.nc")
+```
+
+So apparently my regular functions worked all along. Why did I ever want to read in the raw gdem? Anyway, time to go back and see where to go with shiny app. 
+
 
