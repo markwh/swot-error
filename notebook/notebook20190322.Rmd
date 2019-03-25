@@ -1,0 +1,45 @@
+---
+title: "notebook20190322"
+author: "Mark Hagemann"
+date: "3/22/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+I need to adjust slope_u by a factor of 1e6 in the rt.nc output. Here's a function to do that:
+
+```{r}
+library(ncdf4)
+fix_slope_u <- function(ncfile) {
+  nc <- nc_open(ncfile, write = TRUE)
+  on.exit(nc_close(nc))
+  
+  slopeu <- ncvar_get(nc, "reaches/slope_u")
+  
+  med1 <- median(slopeu)
+  
+  if (median(slopeu, na.rm = TRUE) < 1) { # somewhat arbitrary--prevent changing same file twice
+    slopeu <- slopeu * 1e6
+    ncvar_put(nc, "reaches/slope_u", slopeu)
+  }
+  med2 <- median(slopeu)
+  
+  print(sprintf("Slope was %s, is now %s", med1, med2))
+}
+```
+
+Now apply to all rt.nc files. 
+
+```{r}
+allrtfiles <- list.files("~/Documents/swot-error/output/", 
+                         pattern = "^rt\\.nc$", recursive = TRUE, full.names = TRUE)
+
+purrr::map(allrtfiles, ~fix_slope_u(.))
+```
+
+All done!
+
+
