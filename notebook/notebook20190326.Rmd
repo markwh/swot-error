@@ -1,0 +1,32 @@
+---
+title: "notebook20190326"
+author: "Mark Hagemann"
+date: "3/26/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+dir <- "~/Documents/swot-error/output/sac18"
+library(dplyr)
+library(ggplot2)
+devtools::load_all("~/Documents/rivertile")
+# library(rivertile)
+```
+
+```{r}
+
+rt_valdata(dir, "reaches") %>% 
+  rt_val_scatter(yvar = "relerr")
+```
+
+
+```{r}
+join_pixc(dir) %>% plot_area(nodes = 286, 
+                             node_truth = rt_read(fs::path(dir, "rt_gdem.nc")))
+```
+

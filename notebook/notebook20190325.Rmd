@@ -1,0 +1,116 @@
+---
+title: "notebook20190325"
+author: "Mark Hagemann"
+date: "3/25/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+I'm going to try to visualize exactly how each node and reach calculates values of height, width, area, etc. by aggregating lower-level objects. 
+
+Since node-level area (and width) is what's hanging me up right now, I'll start with that.
+
+What do I want to plot?
+
+Need to join pcv to pixc. 
+
+```{r}
+testdir <- "~/Documents/swot-error/output/sac18"
+# testdir <- "~/Documents/swot-error/output/sac04"
+
+# pcvname <- "pcv.nc"
+# pixcname <- "pixel_cloud.nc"
+pcvname <- "pcv_gdem.nc"
+pixcname <- "fake_pixc.nc"
+
+testpcv <- pixcvec_read(path(testdir, pcvname))
+testpixc <- pixc_read(path(testdir, pixcname)) %>% 
+  inner_join(testpcv, by = c("azimuth_index", "range_index"))
+
+
+```
+
+```{r}
+glimpse(testpixc)
+```
+
+Ready to rock n roll?
+
+```{r}
+sumrydf <- testpixc %>% 
+  filter(node_index == 286) %>% 
+  arrange(desc(water_frac)) %>% 
+  mutate(cum_area = cumsum(pixel_area),
+         classification = as.factor(classification))
+
+gg1 <- sumrydf %>% 
+  ggplot(aes(x = cum_area, y = water_frac)) +
+  geom_area() +
+  geom_linerange(aes(ymin = 0, ymax = water_frac, color = classification))
+gg1
+# plotly::ggplotly(gg1)
+
+
+sumrydf %>% 
+  summarize(tot_area = sum(pixel_area * water_frac))
+  
+```
+
+Make it into a function.
+
+```{r}
+#' Join pixcvec to pixel cloud
+join_pixc <- function(dir, pcvname = "pcv.nc", 
+                      pixcname = "pixel_cloud.nc") {
+
+  pcvdf <- pixcvec_read(path(dir, pcvname))
+  pixcdf <- pixc_read(path(dir, pixcname)) %>%
+    inner_join(pcvdf, by = c("azimuth_index", "range_index"))
+  pixcdf
+}
+
+nodes <- sample(unique(pixc_joined$node_index), 5)
+
+plot_area <- function(pixc_joined, nodes, node_truth = NULL, plot = TRUE) {
+  sumrydf <- pixc_joined %>% 
+    filter(node_index %in% nodes) %>% 
+    group_by(node_index) %>% 
+    arrange(desc(water_frac)) %>% 
+    mutate(cum_area = cumsum(pixel_area),
+           classification = as.factor(classification)) %>% 
+    ungroup()
+  
+  if (!is.null(node_truth)) {
+    joindf <- node_truth %>% 
+      transmute(reach_index = reach_id, node_index = node_id, 
+                true_area = area_total)
+    sumrydf <- sumrydf %>% 
+      left_join(joindf, by = c("node_index", "reach_index"))
+  }
+
+  if (!plot) return(sumrydf)  
+
+  out <- ggplot(sumrydf)
+
+  if (!is.null(node_truth)) {
+    out <- out + 
+      geom_rect(aes(xmin = 0, ymin = 0, xmax = true_area, ymax = 1))
+  }
+  
+  out <- out +
+    geom_area(aes(x = cum_area, y = water_frac)) +
+    geom_linerange(aes(x = cum_area, ymin = 0, 
+                       ymax = water_frac, color = classification)) + 
+    facet_wrap(~node_index)
+  
+
+  
+  out
+}
+
+
+```
+
