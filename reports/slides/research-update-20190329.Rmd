@@ -1,0 +1,188 @@
+---
+title: "Tools for Validating SWOT River Products"
+author: "Mark Hagemann"
+date: "3/29/2019"
+output: 
+  ioslides_presentation:
+    incremental: true
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+library(rivertile)
+library(leaflet)
+library(dplyr)
+library(ggplot2)
+
+opts_chunk$set(echo = FALSE)
+
+theme_set(theme_bw())
+
+sacdir <- "~/Documents/swot-error/output/sac18"
+```
+
+
+```{r, echo = FALSE}
+sacrtnode <- rt_read(fs::path(sacdir, "rt.nc"), group = "nodes")
+sacrtreach <- rt_read(fs::path(sacdir, "rt.nc"), group = "reaches")
+
+sacpixc <- pixc_read(fs::path(sacdir, "pixel_cloud.nc"))
+sacpcv <- pixcvec_read(fs::path(sacdir, "pcv.nc"))
+
+sacpixcjoin <- join_pixc(sacdir) %>% 
+  dplyr::rename(node_id = node_index, reach_id = reach_index)
+
+sacvalnode <- rt_valdata(sacdir, "nodes")
+sacvalreach <- rt_valdata(sacdir, "reaches")
+
+```
+
+
+
+## Tools for Validating SWOT River Products
+
+1. **rivertile** R package
+2. **rivertile-viz** interactive app (Shiny)
+
+## Motivation
+
+SWOT observations of rivers are processed using **RiverObs**
+
+<div class="columns-2">
+```{r, echo = FALSE, fig.width=3.5, fig.height = 4}
+
+nodepixc <- sacpixcjoin %>% 
+  dplyr::filter(node_id == 333)
+
+reachids <- sort(unique(sacrtnode$reach_id))
+nreaches <- length(reachids)
+dkcols <- RColorBrewer::brewer.pal(n = 8, name = "Set3")
+pal <- leaflet::colorNumeric(palette = rep(dkcols, length.out = nreaches), 
+                             domain = reachids)
+
+classes <- c(1, 2, 3, 4, 22, 23, 24)
+classlabs <- c("land", "land_near_water", "water_near_land", "open_water",
+               "land_near_dark_water", "dark_water_edge", "dark_water")
+classpal <- colorFactor(palette = "Set1", domain = classes)
+
+
+leaflet(sacrtnode) %>% 
+  addTiles() %>% 
+  addCircleMarkers(~longitude, ~latitude, 
+                   popup = ~paste(sprintf("reach: %s\nnode: %s", 
+                                          reach_id, node_id)),
+                   opacity = 0.8,
+                   color = ~pal(reach_id),
+                   radius = 2) %>% 
+  addCircleMarkers(~longitude, ~latitude, stroke = FALSE,
+                   radius = 8, fillOpacity = 0.7, 
+                   popup = ~paste(sprintf("reach: %s\nnode: %s", 
+                                          reach_id, node_id)),
+                   fillColor = ~classpal(classification),
+                   data = nodepixc)
+  
+```
+
+**Data Products**
+
+- Pixel Cloud
+- River Tile
+	- Nodes
+	- Reaches
+  - PixcVEC
+\<\div\>
+
+## Motivation
+
+SWOT observations of rivers are processed using **RiverObs**
+
+<div class="columns-2">
+```{r, echo = FALSE, fig.width=3.5, fig.height = 4}
+
+nodepixc <- sacpixcjoin %>% 
+  dplyr::filter(node_id == 333)
+
+reachids <- sort(unique(sacrtnode$reach_id))
+nreaches <- length(reachids)
+dkcols <- RColorBrewer::brewer.pal(n = 8, name = "Set3")
+pal <- leaflet::colorNumeric(palette = rep(dkcols, length.out = nreaches), 
+                             domain = reachids)
+
+classes <- c(1, 2, 3, 4, 22, 23, 24)
+classlabs <- c("land", "land_near_water", "water_near_land", "open_water",
+               "land_near_dark_water", "dark_water_edge", "dark_water")
+classpal <- colorFactor(palette = "Set1", domain = classes)
+
+
+leaflet(sacrtnode) %>% 
+  addTiles() %>% 
+  addCircleMarkers(~longitude, ~latitude, 
+                   popup = ~paste(sprintf("reach: %s\nnode: %s", 
+                                          reach_id, node_id)),
+                   opacity = 0.8,
+                   color = ~pal(reach_id),
+                   radius = 2) %>% 
+  addCircleMarkers(~longitude, ~latitude, stroke = FALSE,
+                   radius = 8, fillOpacity = 0.7, 
+                   popup = ~paste(sprintf("reach: %s\nnode: %s", 
+                                          reach_id, node_id)),
+                   fillColor = ~classpal(classification),
+                   data = nodepixc)
+  
+```
+
+These contain **Observations** (or **estimates**)
+
+- Location
+- Classification (pixels)
+- Height
+- Area
+- Width (nodes, reaches)
+- Slope (reaches)
+<\div>
+
+
+## Motivation
+
+**Goal** is to validate SWOT river products against synthetic (gdem) *truth*
+
+- Validate estimates against truth
+- Validate uncertainty estimates against empirical errors
+
+## **rivertile** package
+
+An R package with functions to
+
+- Read RiverObs output
+- Do simple data joins, filters, transforms
+- Compare against synthetic data
+- Plot/visualize results\
+- Re-aggregate nodes to reaches (soon)
+
+## **rivertile** node example
+
+```{r, echo = TRUE, fig.height=3}
+sacdir <- "~/Documents/swot-error/output/sac18" # contains RiverObs output
+sacvaldata <- rt_valdata(sacdir, group = "nodes") # Validate against synthetic
+rt_val_hist(sacvaldata, vars = c("height", "width", "area_total"), 
+            scale = TRUE, curve = TRUE)
+```
+
+## **rivertile** reach example
+
+```{r, echo = TRUE, fig.height = 3}
+sacvaldata_r <- rt_valdata(sacdir, group = "reaches") # Validate against synthetic
+
+# Plot relative errors against reach ID
+rt_val_scatter(sacvaldata_r, variables = c("height", "width", "slope"), 
+               yvar = "relerr")
+```
+
+## **rivertile-viz** Shiny app
+
+- An interactive visualization tool for RiverObs output/validation
+- Built using R's [Shiny](https://shiny.rstudio.com/) app platform
+- Uses **rivertile** package
+
+[Link to app](https://markwh.shinyapps.io/rivertile-viz/)
+

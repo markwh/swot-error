@@ -21,7 +21,7 @@ devtools::load_all("~/Documents/rivertile")
 ```{r}
 
 rt_valdata(dir, "reaches") %>% 
-  rt_val_scatter(yvar = "relerr")
+  rt_val_scatter(yvar = "relerr", variables = c("height", "slope", "width", "area_total"))
 ```
 
 
@@ -29,4 +29,77 @@ rt_valdata(dir, "reaches") %>%
 join_pixc(dir) %>% plot_area(nodes = 286, 
                              node_truth = rt_read(fs::path(dir, "rt_gdem.nc")))
 ```
+
+
+Now I'm looking into reach width errors as determined by underlying nodes. 
+
+```{r}
+
+valdf_n <- rt_valdata(dir, "nodes", flag_out_nodes = TRUE)
+valdf_r <- rt_valdata(dir, "reaches")
+
+reachi <- 8
+
+plotdf <- valdf_n %>%
+  filter(reach_id == reachi, variable == "area_total") %>% 
+  arrange(node_id)
+
+ggplot(plotdf, aes(x = node_id)) +
+  geom_line(aes(y = cumsum(pixc_err))) +
+  geom_line(aes(y = sqrt(cumsum(sigma_est^2))), color = "blue") +
+  geom_line(aes(y = cumsum(pixc_err) / sqrt(cumsum(sigma_est^2))), color = "red") +
+  scale_y_log10() + annotation_logticks(sides = "l")
+  
+
+plotdf %>% 
+  mutate(relerr = pixc_err / sigma_est) %>% 
+  arrange(relerr) %>% 
+  mutate(cum_err = cumsum(pixc_err),
+         cum_sigma = sqrt(cumsum(sigma_est^2)),
+         cum_relerr = cum_err / cum_sigma, 
+         relerr_rank = rank(relerr)) %>% 
+  ggplot(aes(x = relerr_rank)) +
+  geom_line(aes(y = cum_relerr), color = "red") +
+  geom_point(aes(y = cum_relerr), color = "red")
+
+  
+plotdf %>% 
+  mutate(relerr = pixc_err / sigma_est) %>% 
+  arrange(relerr) %>% 
+  mutate(cum_err = cumsum(pixc_err),
+         cum_sigma = sqrt(cumsum(sigma_est^2)),
+         cum_relerr = cum_err / cum_sigma, 
+         relerr_rank = rank(relerr)) %>%
+  ggplot(aes(x = relerr_rank)) +
+  geom_line(aes(y = (cum_err)^2), color = "red") +
+  geom_point(aes(y = cum_sigma^2), color = "red") +
+  geom_point(aes(y = cum_relerr^2), color = "blue") +
+  scale_y_log10() + annotation_logticks(sides = "l")
+
+  
+valdf_r %>% 
+  filter(reach_id == reachi, variable == "area_detct") %>% 
+  unique() %>% 
+  transmute(reach_id, pixc_val, pixc_err,  sigma_est, relerr = pixc_err / sigma_est)
+  
+```
+
+I'm having a hard time pinning this down exactly. What I want to discern is whether the large reach-level bias is due to a few bad apples or a whole bad bunch. The relative badness (a ranking, at least) is apparent from a ranking of relative errors. 
+
+
+### lag-1 plot
+
+```{r}
+reachi <- 5
+lagdf <- valdf_n %>% 
+  filter(reach_id == reachi, variable == "area_total") %>% 
+  arrange(node_id) %>% 
+  transmute(node_id, relerr = pixc_err / sigma_est, 
+            lagerr = lag(relerr))
+
+plot(relerr ~ lagerr, lagdf)
+acf(lagdf$relerr)
+pacf(lagdf$relerr)
+```
+
 

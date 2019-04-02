@@ -1,0 +1,240 @@
+---
+title: "notebook20190327"
+author: "Mark Hagemann"
+date: "3/27/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Why are reach-level relative errors different for width and area?
+
+```{r}
+dir <- "~/Documents/swot-error/output/sac18"
+
+reach_val <- rt_valdata(dir, group = "reaches")
+
+rt_val_scatter(reach_val, variables = c("width", "area_total"), 
+               yvar = "relerr")
+rt_val_scatter(reach_val, variables = c("width", "area_total"), 
+               yvar = "err")
+
+```
+
+How are these calculated? 
+
+```{r}
+path(dir, "rt.nc") %>% 
+  rt_read(group = "reaches") %>% 
+  glimpse()
+```
+
+I think the answer might be that reach lengths are different between the gdem and real pixc, since the former has nodes the latter doesn't. That would make sense!
+
+So TODO: ensure gdem has same nodes as pixc. Prune partial node obs from pixc. 
+
+I think I can forge ahead now. 
+
+### Cumulative relative error plot
+
+Put this into a function. 
+
+```{r}
+
+
+cumerr_plot <- function(valdf, reach_ids = "all", 
+                        variables = c("width", "area_total"),
+                        desc = FALSE) {
+  
+  if (length(reach_ids) == 1 && reach_ids == "all")
+    reach_ids <- unique(valdf$reach_id)
+  if (length(variables) == 1 && variables == "all")
+    variables <- unique(valdf$variable)
+  
+  rankfun <- function(x) if (desc) -x else x
+
+  plotdf <- valdf %>%
+    dplyr::filter(reach_id %in% reach_ids,
+                  variable %in% variables) %>% 
+    mutate(reach_id = as.factor(reach_id)) %>% 
+    group_by(variable, reach_id) %>% 
+    mutate(relerr = pixc_err / sigma_est) %>% 
+    arrange(rankfun(relerr)) %>% 
+    mutate(cum_err = cumsum(pixc_err),
+       cum_sigma = sqrt(cumsum(sigma_est^2)),
+       cum_relerr = cum_err / cum_sigma, 
+       relerr_rank = rank(rankfun(relerr))) %>% 
+    ungroup()
+
+  ggplot(plotdf, aes(x = relerr_rank)) +
+    geom_line(aes(y = cum_relerr, color = reach_id, group = reach_id)) +
+    facet_wrap(~variable, scales = "free")
+}
+
+
+cumerr_plot(valdf_n, variables = c("height", "width", "area_total"))
+cumerr_plot(valdf_n, variables = c("height", "width", "area_total"), desc = TRUE)
+```
+
+
+I think that looks good. Now do one for leave-one-out. 
+
+
+```{r}
+
+looerr_plot <- function(valdf, reach_ids = "all", 
+                        variables = c("width", "area_total"),
+                        desc = FALSE) {
+  
+  if (length(reach_ids) == 1 && reach_ids == "all")
+    reach_ids <- unique(valdf$reach_id)
+  if (length(variables) == 1 && variables == "all")
+    variables <- unique(valdf$variable)
+  
+  rankfun <- function(x) if (desc) -x else x
+  
+  loosum <- function(x, na.rm = FALSE) sum(x, na.rm = na.rm) - x
+  
+  plotdf <- valdf %>%
+    dplyr::filter(reach_id %in% reach_ids,
+                  variable %in% variables) %>% 
+    mutate(reach_id = as.factor(reach_id)) %>% 
+    group_by(variable, reach_id) %>% 
+    mutate(relerr = pixc_err / sigma_est) %>% 
+    arrange(rankfun(relerr)) %>% 
+    mutate(cum_err = loosum(pixc_err),
+       cum_sigma = sqrt(loosum(sigma_est^2)),
+       cum_relerr = cum_err / cum_sigma, 
+       relerr_rank = rank(rankfun(relerr)),
+       node_ind = node_id - min(node_id)) %>% 
+    ungroup()
+
+  ggplot(plotdf, aes(x = node_ind)) +
+    geom_line(aes(y = cum_relerr, color = reach_id, group = reach_id)) +
+    facet_wrap(~variable, scales = "free")
+}
+
+looerr_plot(valdf_n, variables = c("height", "width", "area_total"))
+cumerr_plot(valdf_n,reach_ids = 7, variables = c("height", "width", "area_total"))
+```
+
+
+I think that looks good. Later I'll put it into rivertile and into the shiny app. 
+
+Next I want to make sure I can replicate the riverobs reach aggregation. This will be useful for recomputing reach values after filtering or adjusting node values. 
+
+```{r}
+
+nodedata <- rt_read(path(dir, "rt.nc"), keep_na_vars = TRUE)
+reachdata <- rt_read(path(dir, "rt.nc"), group = "reaches", keep_na_vars = TRUE)
+
+intersect(names(nodedata), names(reachdata))
+setdiff(names(reachdata), names(nodedata))
+
+calc_len <- function(area, width) {
+  out <- area / width
+  out
+}
+
+reach_height_lm <- function(node_h, node_h_u, node_x, loc_offset, 
+                         weight = TRUE) {
+  weights <- 1 / (node_h_u^2)
+  if (!weight) weights <- NULL
+  
+  hxdf <- data.frame(x = node_x - mean(node_x) + loc_offset, h = node_h)
+  hxmod <- lm(h ~ x, hxdf, weights = weights)
+  
+  hxmod
+}
+
+reachadjdf <- reachdata %>% 
+  dplyr::select(reach_id, loc_offset)
+
+foo <- nodedata %>% 
+  left_join(reachadjdf) %>% 
+  filter(reach_id == 3) %>% 
+  arrange(node_id) %>% 
+  mutate(nodelen = calc_len(.$area_total, .$width),
+         cumlen = cumsum(nodelen))
+
+bar <- with(foo, reach_height_lm(node_h = height2, node_h_u = height2_u, 
+           node_x = cumlen, loc_offset = loc_offset, weight = TRUE))
+
+
+
+est_height <- function(node_h, node_h_u, node_x, loc_offset, weight = TRUE) 
+
+reach_agg <- function(nodedata) {
+  
+  if (is.null(nodedata$cumlen) || is.null(nodedata$nodelen)) {
+    stop("nodedata must have the following precomputed: nodelen, cumlen, loc_offset")
+  }
+  
+  # Make linear models for height, slope
+  hxmods <- split(nodedata, f = nodedata$reach_id) %>% 
+    purrr::map(~reach_height_lm(node_h = .$height, node_h_u = .$height2_u, 
+           node_x = .$cumlen, loc_offset = .$loc_offset, weight = TRUE))
+  hxcoef <- map(hxmods, ~as.data.frame(summary(.)$coefficients, row.names = FALSE)) %>% 
+    map(~setNames(.[, 1:2], c("est", "std"))) %>% 
+    map(~mutate(., param = c("intercept", "slope"))) %>% 
+    bind_rows(.id = "reach_id")
+  
+  reach_heights <- filter(hxcoef, param == "intercept")$est
+  reach_heights_u <- filter(hxcoef, param == "intercept")$std
+  reach_slopes <- filter(hxcoef, param == "slope")$est * 1e6
+  reach_slopes_u <- filter(hxcoef, param == "slope")$std * 1e6
+  
+  nd_agg <- nodedata %>% 
+    group_by(reach_id) %>% 
+    summarize(time = median(time), time_tai = median(time_tai), 
+              area = sum(area_total),
+              area_u = sqrt(sum(area_tot_u^2)),
+              width = area / sum(nodelen),
+              width_u = area_u / sum(nodelen)) %>% 
+    mutate(height = reach_heights,
+           height_u = reach_heights_u,
+           slope = reach_slopes, 
+           slope_u = reach_slopes_u) %>% 
+    rename(area_total = area, area_tot_u = area_u)
+  
+  nd_agg
+}
+
+
+#' Check whether all node IDs are sequential --i.e. none are missing. 
+all_sequential <- function(node_ids) {
+  ids_adj <- node_ids - min(node_ids) + 1
+  isTRUE(all.equal(ids_adj, 1:length(ids_adj)))
+}
+
+add_nodelen <- function(nodedata, reachdata) {
+  
+  nodeids <- nodedata$node_id
+  if (!all_sequential(nodeids)) stop ("Gaps exist in node data")
+
+  # join to loc_offset from reachdata
+  reachadjdf <- reachdata %>% 
+    dplyr::select(reach_id, loc_offset)
+  
+  out <- nodedata %>% 
+    arrange(node_id) %>% 
+    left_join(reachadjdf, by = "reach_id") %>% 
+    mutate(nodelen = calc_len(area_total, width),
+           cumlen = cumsum(nodelen))
+    
+  out
+}
+
+```
+
+Bah, first I need to find out why reachdata has duplicate rows. Fix that immediately. OK, done. 
+
+
+Now that I have that coded up, think through how I might fix mismatches between gdem and pixc data. Starting with area. 
+
+Since the gdem has nodes that the pixc does not, I want to filter these out and recompute gdem area. That would be a simple `filter()` followed by `reach_agg()`. But `add_nodelen()` has to be called beforehand, and cannot be touched by the filter operation. 
+
+
+Everything appears to be working as intended. Time to add to rivertile, document, test more fully. 
