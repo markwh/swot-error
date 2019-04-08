@@ -3,32 +3,28 @@
 
 source("~/Documents/swot-rtval/rivertile-viz/global.R")
 
-rtdata_default <- get_rivertile_data(defaultdir)
-
-badnodes_default <- c(min(rtdata_default$rt_nodes$node_id), 
-                      max(rtdata_default$rt_nodes$node_id),
-                      flag_nodes(defaultdir))
-
-
-
 refdf <- read.csv("~/Documents/swot-error/src/roruns.csv")
 
 dirlist <- paste0("~/Documents/swot-error/", refdf$outdir)
 
 
 # Directory on box server
+library(boxr)
+box_auth()
 boxdir <- box_search("rtval_RData", type = "folder")[[1]]$id
+boxlsdf <- as.data.frame(box_ls(boxdir))
 
 
-for (i in 3:length(dirlist)) {
+for (i in 2:length(dirlist)) {
   diri <- dirlist[i]
   dirspl <- strsplit(diri, "/")[[1]]
   dir_short <- dirspl[length(dirspl)]
   rtdata_in <- get_rivertile_data(diri)
-  badnodes_in <-  c(min(rtdata_default$rt_nodes$node_id), 
-                   max(rtdata_default$rt_nodes$node_id),
-                   flag_nodes(diri))
-  boxr::box_save(rtdata_in, badnodes_in, dir_id = boxdir, file_name = paste0(dir_short, ".RData"))
+  badnodes_in <-  c(mismatch_nodes(rtdata_in$rt_nodes, 
+                                   rtdata_in$gdem_nodes),
+                   ambiguous_nodes(diri))
   
-  
+  namei <- paste0(dir_short, ".RData")
+  box_save(rtdata_in, badnodes_in, dir_id = boxdir, file_name = namei)
+  print(namei)
 }
