@@ -1,0 +1,200 @@
+---
+title: "validation-phase 1"
+author: "Mark Hagemann"
+date: "4/5/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+library(plotly)
+library(leaflet)
+
+opts_chunk$set(echo = FALSE, cache = TRUE, cache.rebuild = TRUE)
+opts_knit$set(root.dir = "~/Documents/swot-error")
+```
+
+```{r, message=FALSE, warning =FALSE}
+library(ProjectTemplate)
+load.project()
+
+devtools::load_all("../rivertile")
+theme_set(theme_bw())
+
+nodeval109 <- rt_valdata(rodir(14))
+nodeval220 <- rt_valdata(rodir(18))
+nodevaldf <- list(`109` = nodeval109, `220` = nodeval220) %>% 
+  bind_rows(.id = "day") %>% 
+  mutate(day = as.numeric(day))
+
+
+reachval109 <- rt_valdata(rodir(14), group = "reaches")
+reachval220 <- rt_valdata(rodir(18), group = "reaches")
+reachvaldf <- list(`109` = reachval109, `220` = reachval220) %>% 
+  bind_rows(.id = "day") %>% 
+  mutate(day = as.numeric(day))
+
+nodelalo <- nodeval109 %>% 
+  dplyr::select(node_id, reach_id, gdem_val, variable) %>% 
+  dplyr::filter(variable %in% c("latitude", "longitude")) %>% 
+  spread(key = variable, value = gdem_val)
+
+valvars <- c("height", "height2", "width", "slope", "area_total")
+
+
+
+```
+
+
+This report presents the results of "phase 1" of validating uncertainty estimates using two different days of simulations on the Sacramento River. Phases 2 and 3 will separate results depending on variables such as uncertainty magnitude and feature size; phase 1 treats all results uniformly, thereby establishing a simple yes/no answer to the question of whether predicted uncertainty matches empirical errors across the entire validation set. 
+
+## Dataset
+
+```{r, eval = FALSE}
+length(unique(nodelalo$node_id))
+length(unique(nodelalo$reach_id))
+min(nodelalo$latitude)
+max(nodelalo$latitude)
+```
+
+The study area consists of 365 nodes in comprising 6 reaches in the Sacramento River between 39.12 and 39.55 degrees latitude. Two simulations of the SWOT single-look complex (SLC) were created using two different flow conditions; other simulation parameters including $\sigma_0$ for water and land, SWOT pass number, and smearing distance were held constand. The water and land $\sigma_0$ were selected so as to remove any impact of layover.  
+
+```{r}
+reachids <- sort(unique(nodelalo$reach_id))
+nreaches <- length(reachids)
+
+dkcols <- RColorBrewer::brewer.pal(n = 8, name = "Set3")
+reachpal <- colorFactor(palette = rep(dkcols, length.out = nreaches), 
+                         domain = reachids)
+
+leaflet(nodelalo) %>% 
+  addTiles() %>% 
+  addCircleMarkers(radius = 2, color = ~reachpal(reach_id), 
+                   popup = ~paste(sprintf("reach: %s\nnode: %s", 
+                                          reach_id, node_id)), 
+                   opacity = 1) %>% 
+  addLegend(position = "topright", pal = reachpal, values = reachids, 
+            title = "Reach ID", opacity = 1)
+```
+
+
+## Results
+
+The results in phase 1 are presented in 3 forms: plots comparing theoretical to empirical distributions, tables comparing theoretical to empirical statistics, and tables summarizing hypothesis tests. Results at the node scale are presented in section ####; reach-scale results are presented in section ####. 
+
+
+### Distribution plots
+
+```{r}
+
+histdf <- rt_val_hist(nodevaldf, scale = TRUE, plot = FALSE)
+
+histgg1 <- histdf %>%     
+  dplyr::filter(variable %in% valvars) %>% 
+  ggplot(aes(x = err)) +
+  geom_histogram(aes(y = ..density.., fill = as.factor(day), 
+                     group = day), position = "dodge",
+                 bins = 15) +
+  facet_wrap(~variable, scales = "free") +
+  stat_function(fun = dnorm, args = list(mean = 0, sd = 1), color = "blue") +
+  scale_fill_brewer(palette = "Set1")
+
+histgg1
+# ggplotly(histgg1)
+```
+
+
+```{r}
+
+qqgg1 <- nodevaldf %>% 
+  dplyr::filter(variable %in% valvars) %>% 
+  group_by(variable, day) %>% 
+  mutate(rel_err = pixc_err / sigma_est, 
+         theoretical = qqnorm(rel_err, plot.it = FALSE)$x) %>% 
+  ungroup() %>% 
+  ggplot(aes(x = theoretical, y = rel_err)) + 
+  geom_point(aes(text = node_id, color = as.factor(day))) +
+  facet_wrap(~variable, scales = "free_y") +
+  geom_abline(slope = 1, intercept = 0) +
+  scale_color_brewer(palette = "Set1")
+
+
+# qqgg1
+ggplotly(qqgg1, tooltip = "text")
+```
+
+```{r}
+scattergg1 <- rt_val_scatter(nodevaldf, variables = valvars, yvar = "relerr", plot = FALSE) %>% 
+  ggplot(aes(x = xval, y = yval)) +
+  # Add ribbons
+  geom_ribbon(ymin = -1.96, ymax = 1.96, fill = "#dddddd") +
+  geom_ribbon(ymin = -1, ymax = 1, fill = "#aaaaaa") +
+  # add points
+  geom_point(aes(color = as.factor(day)), alpha = 0.6) +
+    facet_wrap(~variable, scales = "free") +
+    ylab("relative error") + xlab("Node ID") +
+  scale_color_brewer(palette = "Set1")
+
+ggplotly(scattergg1)
+
+```
+
+### Tables 
+
+
+
+```{r}
+nodevaldf %>% 
+  dplyr::filter(variable %in% valvars) %>% 
+  val_coverage() %>% 
+  kable()
+```
+
+```{r}
+nodevaldf %>% 
+  mutate(relerr = pixc_err / sigma_est) %>% 
+  dplyr::filter(variable %in% valvars) %>% 
+  group_by(variable) %>% 
+  summarize(bias = mean(relerr), sd = sd(relerr)) %>% 
+  mutate(rmse = sqrt(bias^2 + sd^2)) %>% 
+  kable()
+```
+
+```{r}
+nodevaldf %>% 
+  dplyr::filter(variable %in% valvars) %>% 
+  rt_hyptest() %>% 
+  kable()
+```
+
+## Reach results 
+
+### Plots
+
+```{r}
+reachvaldf %>% 
+  rt_val_scatter(variables = valvars, yvar = "relerr", plot = FALSE) %>% 
+  ggplot(aes(x = xval, y = yval)) +
+  # Add ribbons
+  geom_ribbon(ymin = -1.96, ymax = 1.96, fill = "#dddddd") +
+  geom_ribbon(ymin = -1, ymax = 1, fill = "#aaaaaa") +
+  # add points
+  geom_point(aes(color = as.factor(day)), alpha = 0.6) +
+    facet_wrap(~variable, scales = "free") +
+    ylab("relative error") + xlab("Node ID") +
+  scale_color_brewer(palette = "Set1")
+
+```
+
+```{r}
+reachvaldf %>% 
+  dplyr::filter(variable %in% valvars) %>% 
+  rt_hyptest() %>% 
+  kable()
+```
+
+
+```{r}
+
+```
+

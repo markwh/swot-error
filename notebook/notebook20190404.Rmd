@@ -1,0 +1,224 @@
+---
+title: "notebook20190404"
+author: "Mark Hagemann"
+date: "4/4/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Beginning a prototype for uncertainty validation across characteristics of node, reach data. Copying from simplenote:
+
+- viewing geometry* 
+	- cross-track distance
+	- npix_cross, npix_along (node width/area only)
+	- flow angle / median of flow angle--width/area height via layover
+- layover condition (noise background for land and water)
+- hydraulic condition--e.g. variability in inundated area (HOW TO QUANTIFY?)
+	- percentile of flow
+	- flow/(mean flow), or log(flow) - mean(log(flow)) 
+- magnitude of slope*, width*, area*
+	- ditto for magnitude of uncertainty (will be correlated with magnitude of variable)
+- number of pixels/nodes*
+- Uncertainty estimation method (height, height2, width/area, slope)
+- Data product--reach or node
+
+- Starting with scatterplots. 
+    - y-axis: relative error
+    - x-axis: different variables above
+        - x-track distance
+        - n pixels
+        - log(flow) - mean(log(flow)) (use high, low flow condition for now)
+    - Color: other variables
+        - land-water contrast (dB)
+        - hydrologic condition (high flow, low flow)
+    - angle: node orientation relative to track
+    - One set per variable (height, height2, area)
+    - repeat for reaches, but they'll be less interesting. 
+
+```{r}
+devtools::load_all("../../rivertile")
+diri <- "~/Documents/swot-error/output/sac18"
+
+valdf1 <- rt_valdata(diri, flag_out_nodes = TRUE) %>% 
+  mutate(rel_sigma = sigma_est / pixc_val, rel_val = pixc_val / sigma_est)
+
+xvars <- c("xtrk_dist", "n_good_pix", "pixc_val", "sigma_est", "rel_sigma", "rel_val")
+
+plotdf1 <- xvars %>% 
+  map(~rt_val_scatter(valdf1, 
+                      variables = c("width", "area_total",
+                                    "height", "height2"),
+                      xvar = ., yvar = "relerr", 
+                      plot = FALSE)) %>% 
+  setNames(xvars) %>% 
+  bind_rows(.id = "xvar")
+
+
+var1 <- "area_total"
+plotdf1 %>% 
+  filter(variable == var1) %>% 
+  ggplot(aes(x = xval, y = yval)) + 
+  geom_point() +
+  facet_wrap(~xvar, scales = "free_x") +
+  ylab("relative error") + xlab("") +
+  ggtitle(var1)
+
+var2 <- "height"
+plotdf1 %>% 
+  filter(variable == var2) %>% 
+  ggplot(aes(x = xval, y = yval)) + 
+  geom_point() +
+  facet_wrap(~xvar, scales = "free_x") +
+  ylab("relative error") + xlab("") +
+  ggtitle(var2)
+
+var3 <- "height2"
+plotdf1 %>% 
+  filter(variable == var3) %>% 
+  ggplot(aes(x = xval, y = yval)) + 
+  geom_point() +
+  facet_wrap(~xvar, scales = "free_x") +
+  ylab("relative error") + xlab("") +
+  ggtitle(var3)
+```
+
+Next I need to add in inter-run variables: hydrologic condition, noise contrast. These I can only get from the roruns.csv file. Find a way to elegantly incorporate that!
+
+```{r}
+roruns <- read.csv("../src/roruns.csv", stringsAsFactors = FALSE)
+
+glimpse(roruns)
+```
+
+Start with hydro condition--easiest to incorporate. Rather than overthinking how to select runs automatically, just manually specify the run number and fish out the results using the roruns object. 
+
+```{r}
+roruns[18, ] %>% glimpse()
+
+romatch <- function(rorow, vary) {
+  relcols <- c("priordb", "case", "pass", "bndry_cond", "smearing",
+               "land_sig0", "water_sig0", "gdem_name")
+  keepcols <- setdiff(relcols, vary)
+  rowstrings <- apply(roruns[, keepcols], 1, paste0, collapse = "")
+  matchrow <- paste0(roruns[rorow, keepcols], collapse = "")
+  out <- setdiff(which(matchrow == rowstrings), rorow)
+  out
+}
+
+romatch(18, c("bndry_cond"))
+romatch(18, c("land_sig0", "water_sig0"))
+romatch(18, c("bndry_cond", "land_sig0", "water_sig0"))
+```
+
+That's a handy, albeit not super elegant, function. With it I can provide a row number and axis to vary and get the row numbers of runs that only vary along the specified axis/es. 
+
+Now a directory retrieval function. 
+
+```{r}
+rodir <- function(rorow) {
+  basedir <- "~/Documents/swot-error/"
+  out <- normalizePath(fs::path(basedir, roruns$outdir[rorow]))
+  names(out) <- roruns$outno[rorow]
+  out
+}
+rodir(18)
+romatch(18, c("land_sig0", "water_sig0")) %>% rodir()
+```
+
+Nice! Now I can combine these to fill out my scatterplots. 
+
+```{r}
+valdf2 <- c(18, romatch(18, "bndry_cond")) %>% 
+  setNames(., nm = .) %>% 
+  rodir() %>% 
+  map(~rt_valdata(dir = ., group = "nodes", flag_out_nodes = TRUE)) %>% 
+  bind_rows(.id = "outno") %>% 
+  mutate(outno = as.numeric(outno)) %>% 
+  left_join(roruns, by = "outno") %>% 
+  mutate(rel_sigma = sigma_est / pixc_val, rel_val = pixc_val / sigma_est)
+
+xvars <- c("xtrk_dist", "n_good_pix", "pixc_val", "sigma_est", "rel_sigma", "rel_val")
+
+plotdf2 <- xvars %>% 
+  map(~rt_val_scatter(valdf2, 
+                      variables = c("width", "area_total",
+                                    "height", "height2"),
+                      xvar = ., yvar = "relerr", 
+                      plot = FALSE)) %>% 
+  setNames(xvars) %>% 
+  bind_rows(.id = "xvar")
+
+
+var1 <- "area_total"
+plotdf2 %>% 
+  filter(variable == var1) %>% 
+  ggplot(aes(x = xval, y = yval, color = bndry_cond)) + 
+  geom_point(alpha = 0.3) +
+  facet_wrap(~xvar, scales = "free_x") +
+  ylab("relative error") + xlab("") +
+  ggtitle(var1)
+```
+
+Nice! Shall I attempt a sigma0 comparison?
+
+```{r}
+valdf3 <- c(18, romatch(18, c("water_sig0", "land_sig0"))) %>% 
+  setNames(., nm = .) %>% 
+  rodir() %>% 
+  map(~rt_valdata(dir = ., group = "nodes", flag_out_nodes = TRUE)) %>% 
+  bind_rows(.id = "outno") %>% 
+  mutate(outno = as.numeric(outno)) %>% 
+  left_join(roruns, by = "outno") %>% 
+  mutate(rel_sigma = sigma_est / pixc_val, rel_val = pixc_val / sigma_est)
+
+xvars <- c("xtrk_dist", "n_good_pix", "pixc_val", "sigma_est", "rel_sigma", "rel_val")
+
+plotdf3 <- xvars %>% 
+  map(~rt_val_scatter(valdf3, 
+                      variables = c("width", "area_total",
+                                    "height", "height2"),
+                      xvar = ., yvar = "relerr", 
+                      plot = FALSE)) %>% 
+  setNames(xvars) %>% 
+  bind_rows(.id = "xvar")
+
+
+var1 <- "area_total"
+plotdf3 %>% 
+  filter(variable == var1) %>% 
+  mutate(sig0 = paste(water_sig0, land_sig0, sep = ",")) %>% 
+  ggplot(aes(x = xval, y = yval, color = sig0)) + 
+  geom_point(alpha = 0.3) +
+  facet_wrap(~xvar, scales = "free_x") +
+  ylab("relative error") + xlab("") +
+  ggtitle(var1)
+
+var2 <- "height"
+plotdf3 %>% 
+  filter(variable == var2) %>% 
+  mutate(sig0 = paste(water_sig0, land_sig0, sep = ",")) %>% 
+  ggplot(aes(x = xval, y = yval, color = sig0)) + 
+  geom_point(alpha = 0.3) +
+  facet_wrap(~xvar, scales = "free_x") +
+  ylab("relative error") + xlab("") +
+  ggtitle(var2)
+```
+
+Based on the above plots, try a simple adjustment using a linear fit of relerr ~ sigma_est.
+
+```{r}
+
+var1 <- "area_total"
+plotdf2 %>% 
+  filter(variable == var1, bndry_cond == 220,
+         node_id != 573) %>% 
+  dplyr::select(node_id, yval, xvar, xval, bndry_cond) %>%
+  spread(key = xvar, value = xval) %>% #pairs()
+  lm(yval ~ sigma_est + n_good_pix, .) %>% 
+  summary()
+
+```
+
