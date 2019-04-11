@@ -8,7 +8,7 @@ munging: FALSE
 logging: FALSE
 logging_level: INFO
 load_libraries: TRUE
-libraries: ncdf4, ggplot2, purrr, tidyr, dplyr, sf, dismo, rivertile, fs, reticulate
+libraries: ncdf4, ggplot2, purrr, tidyr, sf, dismo, rivertile, fs, reticulate, dplyr
 as_factors: TRUE
 attach_internal_libraries: FALSE
 cache_loaded_data: TRUE

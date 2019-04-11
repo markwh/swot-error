@@ -1,0 +1,74 @@
+---
+title: "notebook20190408"
+author: "Mark Hagemann"
+date: "4/8/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+I think I found a bug in rt_hyptest that makes the p-value larger than 1 in some cases. Check my math. Can't double upper tail if upper tail prob > 0.5!
+
+
+Checking in on reach aggregation. Does `reach_agg()` work?
+
+
+```{r}
+foo <- rt_read(fs::path(rodir(18), "rt.nc")) %>% 
+  add_nodelen(rt_read(fs::path(rodir(18), "rt.nc"), group = "reaches"))
+
+glimpse(foo)
+
+nodedata <- foo
+```
+
+Here's the meat of `reach_agg()`:
+
+```{r}
+if (is.null(nodedata$cumlen) || is.null(nodedata$nodelen)) {
+  stop("nodedata must have the following precomputed: nodelen, cumlen, loc_offset")
+}
+
+# Make linear models for height, slope
+hxmods <- split(nodedata, f = nodedata$reach_id) %>%
+  purrr::map(~reach_height_lm(node_h = .$height, node_h_u = .$height2_u,
+                              node_x = .$cumlen, loc_offset = .$loc_offset, weight = TRUE))
+hxcoef <- map(hxmods, ~as.data.frame(summary(.)$coefficients, row.names = FALSE)) %>%
+  map(~setNames(.[, 1:2], c("est", "std"))) %>%
+  map(~mutate(., param = c("intercept", "slope"))) %>%
+  bind_rows(.id = "reach_id")
+
+reach_heights <- dplyr::filter(hxcoef, param == "intercept")$est
+reach_heights_u <- dplyr::filter(hxcoef, param == "intercept")$std
+reach_slopes <- dplyr::filter(hxcoef, param == "slope")$est * 1e6
+reach_slopes_u <- dplyr::filter(hxcoef, param == "slope")$std * 1e6
+
+nd_agg <- nodedata %>%
+  group_by(.data$reach_id) %>%
+  summarize(time = median(.data$time), time_tai = median(.data$time_tai),
+            area = sum(.data$area_total),
+            area_u = sqrt(sum(.data$area_tot_u^2)),
+            width = area / sum(.data$nodelen),
+            width_u = area_u / sum(.data$nodelen)) %>%
+  mutate(height = reach_heights,
+         height_u = reach_heights_u,
+         slope = reach_slopes,
+         slope_u = reach_slopes_u) %>%
+  rename(area_total = area, area_tot_u = area_u)
+
+nd_agg
+```
+
+OK, fixed. Just needed to remove some erroneous `.data$` pieces.
+
+```{r}
+foo <- rt_read(fs::path(rodir(18), "rt.nc")) %>% 
+  add_nodelen(rt_read(fs::path(rodir(18), "rt.nc"), group = "reaches")) %>% 
+  reach_agg()
+
+glimpse(foo)
+
+```
+

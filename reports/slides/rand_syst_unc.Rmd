@@ -1,0 +1,113 @@
+---
+title: "random and systematic uncertainty"
+author: "Mark Hagemann"
+date: "4/11/2019"
+output: 
+  ioslides_presentation:
+    incremental: true
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+library(dplyr)
+opts_chunk$set(echo = FALSE)
+```
+
+## Uncertainty decomposition
+
+
+- `height_u` is total 1-sigma uncertainty ($\sigma$)
+- `height_u_r` ($\sigma_r$) is component of uncertainty that is independent between features
+- The rest is systematic, call that `height_u_s` ($\sigma_s$)
+
+$$
+\sigma = \sqrt{\sigma_s^2 + \sigma_r^2}
+$$
+
+
+## Simple example
+
+Average height of 3 nodes
+
+```{r}
+exdf <- data.frame(node = 1:3, height = 6:4, height_u = c(2.5, 2.5, 1.5),
+                   height_u_r = c(2, 2, 1))
+
+exdf %>% 
+  kable()
+```
+
+$$
+\sigma = \sqrt{\sigma_s^2 + \sigma_r^2}
+$$
+
+
+## Simple example
+
+Average height of 3 nodes
+
+```{r}
+exdf2 <- data.frame(node = as.character(1:3), height = 6:4, height_u = c(2.5, 2.5, 1.5),
+                   height_u_r = c(2, 2, 1), height_u_s = c(1.5, 1.5, 1.118), 
+                   stringsAsFactors = FALSE)
+
+exdf2 %>% 
+  kable()
+```
+
+$$
+\sigma_s = \sqrt{\sigma^2 - \sigma_r^2}
+$$
+
+
+
+## Simple example
+
+Average height of 3 nodes
+
+```{r}
+exdf_agg <- exdf2 %>% 
+  summarize(height = mean(height), height_u_s = mean(height_u_s),
+            height_u_r = 1 / 3 * sqrt(sum(height_u_r^2))) %>% 
+  mutate(node = "mean", height_u = sqrt(height_u_r^2 + height_u_s^2))
+
+
+exdf2 %>% 
+  rbind(exdf_agg) %>% 
+  kable(digits = 3)
+```
+
+- $\sigma^*_s \le \text{mean}(\sigma_{s})$
+- $\sigma^*_r = \frac{1}{N}\sqrt{\sum_{i}\sigma_{r,i}^2}$
+- $\sigma^* = \frac{1}{N} \sqrt{\sigma_s^{*2} + \sigma_r^{*2}}$
+
+## Illustration
+
+Cumulative error as aggregate over 100 features
+
+```{r}
+sysvec <- runif(100, 0, 0.2)
+randvec <- runif(100)
+totvec <- sqrt(sysvec^2 + randvec^2)
+
+errvec <- rnorm(100, 0, randvec) + rnorm(1) * sysvec
+
+cumsys <- cumsum(sysvec) / 1:100
+cumrand <- sqrt(cumsum(randvec^2)) / 1:100
+cumtot <- sqrt(cumrand^2 + cumsys^2)
+cumerr <- cumsum(errvec) / 1:100
+
+plotdf <- data.frame(node = 1:100, sys = cumsys, 
+                     rand = cumrand, tot = cumtot, err = cumerr)
+
+library(ggplot2)
+plotdf %>% 
+  ggplot(aes(x = node)) + 
+  geom_line(aes(y = sys), color = "blue") + 
+  geom_line(aes(y = rand), color = "red") + 
+  geom_line(aes(y = tot), color = "gray50") +
+  theme_bw()
+
+
+```
+

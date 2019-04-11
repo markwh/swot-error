@@ -1,0 +1,117 @@
+---
+title: "notebook20190409"
+author: "Mark Hagemann"
+date: "4/9/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+I need to come up with a way to show how errors and uncertainties accumulate from nodes to reaches. 
+
+I don't know why I haven't done this scatterplot before:
+
+```{r}
+valdf1 <- rt_valdata(rodir(18))
+
+valdf1 %>% 
+  rt_val_scatter(xvar = "gdem_val", variables = "area_total") +
+  facet_wrap(~reach_id, scales = "free") +
+  scale_x_log10() + scale_y_log10()
+
+```
+
+Now show uncertainty and stdev as errors are accumulated across nodes.
+
+```{r}
+
+cummse <- function(x, debias = FALSE) {
+  if (debias) x <- x - mean(x)
+  cumsum(x^2) / seq_along(x)
+}
+
+valdf1 %>% 
+  filter(variable == "width") %>% 
+  group_by(reach_id) %>% 
+  arrange(node_id) %>% 
+  mutate(cumul_mse = cummse(pixc_err),
+         cumul_uncert = cummse(sigma_est)) %>% 
+  ungroup() %>% 
+  ggplot(aes(x = node_id, y = sqrt(cumul_mse))) +
+  geom_line() + 
+  geom_line(aes(y = sqrt(cumul_uncert)), color = "red") +
+  facet_wrap(~reach_id, scales = "free_x") +
+  scale_y_log10()
+```
+
+
+Show as width--i.e. divide by node length. 
+
+```{r}
+
+
+plotdf1 <- rodir(18) %>% 
+  rt_valdata(flag_out_nodes = TRUE) %>% 
+  filter(variable == "area_total") %>% 
+  group_by(reach_id) %>% 
+  arrange(node_id) %>% 
+  mutate(cumul_err = (cumsum(pixc_err) / cumsum(nodelen)),
+         cumul_mse = cumul_err^2 / seq_along(node_id),
+         cumul_uncert = cumsum(sigma_est^2) / cumsum(nodelen)^2) %>% 
+  ungroup()
+ggplot(plotdf1, aes(x = node_id, y = cumul_err)) +
+  geom_line() + 
+  geom_line(aes(y = sqrt(cumul_uncert)), color = "red") +
+  geom_line(aes(y = -sqrt(cumul_uncert)), color = "red") +
+  facet_wrap(~reach_id, scales = "free_x")
+
+ggplot(plotdf1, aes(x = node_id, y = cumul_err^2)) +
+  geom_line() + 
+  geom_line(aes(y = cumul_uncert), color = "red") +
+  facet_wrap(~reach_id, scales = "free_x") +
+  scale_y_log10()
+```
+
+
+Now again as area
+
+```{r}
+
+plotdf2 <- rodir(18) %>% 
+  rt_valdata(flag_out_nodes = TRUE) %>% 
+  filter(variable == "area_total") %>% 
+  group_by(reach_id) %>% 
+  arrange(node_id) %>% 
+  transmute(node_id, 
+            pixc_err,
+            rel_err = pixc_err / sigma_est,
+            cumul_err = cumsum(pixc_err),
+            cumul_uncert = sqrt(cumsum(sigma_est^2)),
+            cumul_relerr = cumul_err / cumul_uncert,
+            sigma_est) %>% 
+  ungroup() %>% 
+  gather(key = "variable", value = "value", -reach_id, -node_id, -cumul_uncert, -sigma_est) %>% 
+  mutate(uncert = case_when(variable == "pixc_err" ~ sigma_est,
+                            variable == "rel_err" | variable == "cumul_relerr" ~ 1,
+                            variable == "cumul_err" ~ cumul_uncert))
+
+
+nodebreaks <- unique(plotdf2$node_id) %>% `[`(.%%20 == 0)
+
+ggplot(plotdf2, aes(x = node_id, y = value)) +
+  geom_line() + 
+  geom_line(aes(y = uncert), color = "red") +
+  geom_line(aes(y = -uncert), color = "red") +
+  geom_line(aes(y = 1.96 * uncert), color = "red", linetype = 2) +
+  geom_line(aes(y = -1.96 * uncert), color = "red", linetype = 2) +
+  # facet_wrap(~reach_id, scales = "free_x") +
+  facet_grid(variable~reach_id, scales = "free", space = "free_x") +
+  scale_x_continuous(breaks = nodebreaks, expand = expand_scale(0, 0)) +
+  theme(panel.spacing = unit(2, "points"))
+
+
+```
+
+
