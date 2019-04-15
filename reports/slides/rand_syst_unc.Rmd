@@ -79,7 +79,7 @@ exdf2 %>%
 
 - $\sigma^*_s \le \text{mean}(\sigma_{s})$
 - $\sigma^*_r = \frac{1}{N}\sqrt{\sum_{i}\sigma_{r,i}^2}$
-- $\sigma^* = \frac{1}{N} \sqrt{\sigma_s^{*2} + \sigma_r^{*2}}$
+- $\sigma^* = \sqrt{\sigma_s^{*2} + \sigma_r^{*2}}$
 
 ## Illustration
 

@@ -77,10 +77,10 @@ ggplot(plotdf1, aes(x = node_id, y = cumul_err^2)) +
 
 Now again as area
 
-```{r}
+```{r, fig.width = 7, fig.height=8}
 
 plotdf2 <- rodir(18) %>% 
-  rt_valdata(flag_out_nodes = TRUE) %>% 
+  rt_valdata(flag_out_nodes = FALSE) %>% 
   filter(variable == "area_total") %>% 
   group_by(reach_id) %>% 
   arrange(node_id) %>% 
@@ -114,4 +114,33 @@ ggplot(plotdf2, aes(x = node_id, y = value)) +
 
 ```
 
+```{r}
+rodir(18) %>% 
+  rt_valdata("reaches") %>% 
+  rt_val_scatter(yvar = "relerr", variables = c("area_total", "width"))
+```
+
+Think through next steps. I would ideally like show side-by-side: 
+
+- map with pixels for a given node
+- node area aggregation plot
+    - ideally with crosstalk to leaflet map
+- reachwise node scatterplots
+- reach scatterplots
+
+So what does this require? 
+
+- Put reachwise node series into a function
+- Modify shiny app to include only these bits
+
+
+Here's a function for the noeseries plot. 
+
+```{r}
+rodir(18) %>% 
+  rt_valdata() %>% 
+  rt_nodewise_error()
+```
+
+Cool. Put that into a lib/ script. Good. Next I can start on a shiny dashboard. 
 
