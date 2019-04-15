@@ -44,7 +44,7 @@ $$
 
 ## Simple example
 
-Average height of 3 nodes
+Average height of 3 nodes -- back out systematic error
 
 ```{r}
 exdf2 <- data.frame(node = as.character(1:3), height = 6:4, height_u = c(2.5, 2.5, 1.5),
@@ -63,7 +63,7 @@ $$
 
 ## Simple example
 
-Average height of 3 nodes
+Average height of 3 nodes -- average height with uncertainty
 
 ```{r}
 exdf_agg <- exdf2 %>% 
@@ -79,13 +79,15 @@ exdf2 %>%
 
 - $\sigma^*_s \le \text{mean}(\sigma_{s})$
 - $\sigma^*_r = \frac{1}{N}\sqrt{\sum_{i}\sigma_{r,i}^2}$
-- $\sigma^* = \frac{1}{N} \sqrt{\sigma_s^{*2} + \sigma_r^{*2}}$
+- $\sigma^* = \sqrt{\sigma_s^{*2} + \sigma_r^{*2}}$
 
 ## Illustration
 
-Cumulative error as aggregate over 100 features
+Cumulative aggregated uncertainty over 100 features. Red: random; Blue: systematic; Gray: total
 
 ```{r}
+set.seed(5823)
+
 sysvec <- runif(100, 0, 0.2)
 randvec <- runif(100)
 totvec <- sqrt(sysvec^2 + randvec^2)
@@ -106,8 +108,8 @@ plotdf %>%
   geom_line(aes(y = sys), color = "blue") + 
   geom_line(aes(y = rand), color = "red") + 
   geom_line(aes(y = tot), color = "gray50") +
-  theme_bw()
-
+  theme_bw() + 
+  ylab("1-sigma uncertainty")
 
 ```
 
