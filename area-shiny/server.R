@@ -3,10 +3,10 @@
 # across scales: pixel to node, node to reach. 
 #
 
-default_data_url <- "https://osu.box.com/shared/static/9ng2ys6kubcbkqu8riar0l89uzk101zr.rdata"
-run_manifest <- read.csv("./roruns.csv", stringsAsFactors = FALSE) %>% 
-  dplyr::filter(!is.na(rtviz_url),
-                nchar(rtviz_url) > 0) 
+# default_data_url <- "https://osu.box.com/shared/static/9ng2ys6kubcbkqu8riar0l89uzk101zr.rdata"
+# run_manifest <- read.csv("./roruns.csv", stringsAsFactors = FALSE) %>% 
+#   dplyr::filter(!is.na(rtviz_url),
+#                 nchar(rtviz_url) > 0) 
 
 ####------------------------------------
 #### START OF SERVER FUNCTION ----------
@@ -19,15 +19,22 @@ function(input, output, session) {
   purgeCounter <- 0
   restoreCounter <- 0 # Track whether node restoration has been triggered.
   
+  runurl <- reactive(runurls[input$runselect])
+  
   # Full dataset from get_rivertile_data()
   data_in <- reactive({ 
-    load("cache/sac18.RData")
-    # load(url(default_data_url))
+    # load("cache/sac18.RData")
+    load(url(runurl()))
     rtdata_in$rt_nodes <- rtdata_in$rt_nodes %>% 
-      add_nodelen() %>% add_offset(reachdata = rtdata_in$rt_reaches)
+      add_nodelen() %>% 
+      add_offset(reachdata = rtdata_in$rt_reaches)
     rtdata_in$gdem_nodes <- rtdata_in$gdem_nodes %>% 
       add_nodelen() %>% add_offset(reachdata = rtdata_in$gdem_reaches)
     rtdata_in$rt_pixc$pixel_id <- 1:nrow(rtdata_in$rt_pixc) # manually assign pixel ID
+    
+    nodediff <- with(rtdata_in, setdiff(gdem_nodes$node_id, rt_nodes$node_id))
+    # browser()
+    rtdata_in <- purge_nodes(rtdata_in, nodediff)
     
     purgedNodes <<- numeric(0) # reset purgedNodes
     # purgeCounter <<- 0
@@ -38,7 +45,11 @@ function(input, output, session) {
   
   # Node selection and purging
   purgedNodes_rct <- reactive({
+    input$nodePurge
+    input$nodeRestore
     
+    # These if statements are apparently not enough to trigger the reactive. 
+    # Hence the explicit mention above.
     if (input$nodePurge > purgeCounter) {
       # purging has just been triggered
       purgeCounter <<- purgeCounter + 1
@@ -59,7 +70,7 @@ function(input, output, session) {
   # Current dataset (subset of data_in)
   rtdata <- reactive({
 
-    # isolate(nodeaccum_shared$clearSelection())
+    # isolate(nodeaccum_shared()$clearSelection())
     
     topurge <- purgedNodes_rct()
     
@@ -75,11 +86,16 @@ function(input, output, session) {
     reachids <- sort(unique(data_in()$rtdata_in$rt_reaches$reach_id))
     nreaches <- length(reachids)
     # viridisLite::viridis(n = nreaches) 
-    dkcols <- RColorBrewer::brewer.pal(n = 8, name = "Set3")
+    dkcols <- RColorBrewer::brewer.pal(n = 8, name = "Dark2")
     pal <- leaflet::colorNumeric(palette = rep(dkcols, length.out = nreaches), 
                                  domain = reachids)
     pal
   })
+  reachcolvec <- reactive({
+    reachids <- sort(unique(data_in()$rtdata_in$rt_reaches$reach_id))
+    setNames(reachpal()(reachids), reachids)
+  })
+  
 
   #### MAPPING ####
 
@@ -103,7 +119,10 @@ function(input, output, session) {
   
   # Pixel data and sared version for crosstalk
   pixeldata_forplot <- reactive({
-    nodeaccum_shared$selection()
+    input$nodePlot
+    trueareadf <- rtdata()$gdem_nodes %>% 
+      dplyr::select(node_id, area_total) %>% 
+      mutate(true_area = area_total)
     rtdata()$rt_pixc %>% 
       dplyr::filter(node_id %in% selNode) %>% 
       group_by(node_id) %>% 
@@ -111,7 +130,8 @@ function(input, output, session) {
       mutate(cum_area = cumsum(pixel_area), 
              area_lag = dplyr::lag(cum_area, default = 0), 
              classification = as.factor(classification)) %>% 
-      ungroup()
+      ungroup() %>% 
+      left_join(trueareadf, by = "node_id")
   })
   
   pixeldata_shared <- highlight_key(pixeldata_forplot)
@@ -216,51 +236,77 @@ function(input, output, session) {
   # plotly object for scatterplot
   output$reach_relerrplot <- renderPlotly({
     # event.data <- event_data("plotly_click", source = "select")
-    
+    # browser()
     gg <- ggplot(valdata_shared, aes(x = reach_id)) +
       geom_ribbon(ymin = -1.96, ymax = 1.96, color = "#dddddd") +
       geom_ribbon(ymin = -1, ymax = 1, color = "#bbbbbb") +
-      geom_point(aes(y = relerr), color = "black")# +
-      # geom_point(aes(y = relerr_orig), color = "#ddbbbb")
-    ggplotly(gg, tooltip = "text")
+      geom_point(aes(y = relerr), color = "#ddbbbb", 
+                 data = valdata_reach_orig()) +
+      geom_point(aes(y = relerr, color = as.factor(reach_id))) +
+      scale_color_manual(values = reachcolvec())
+    
+      
+    ggplotly(gg, tooltip = "text") %>% 
+      hide_legend()
+      
   })
   
   # Node accumulation plot
   nodeaccumdf <- reactive({
     # browser()
+    plotvars <- if (input$err_rel) 
+      c("cumul_relerr", "rel_err") else 
+        c("cumul_err", "pixc_err")
     rt_nodewise_error(valdata_node(), variable = "area_total", plot = FALSE) %>% 
-      filter(variable %in% c("cumul_err", "rel_err"))
+      filter(variable %in% plotvars)
   })
-  nodeaccum_shared <- SharedData$new(nodeaccumdf)
+  nodeaccum_shared <- reactive(SharedData$new(nodeaccumdf))
   output$node_accum <- renderPlotly({
-    
-    gg <- ggplot(nodeaccum_shared, aes(x = node_id, y = value)) +
-      geom_point(aes(text = node_id)) +
-      geom_line(aes(y = uncert), color = "red") +
-      geom_line(aes(y = -uncert), color = "red") +
-      geom_line(aes(y = 1.96 * uncert), color = "red", linetype = 2) +
-      geom_line(aes(y = -1.96 * uncert), color = "red", linetype = 2) +
+    # browser()
+    gg <- ggplot(nodeaccum_shared(), aes(x = node_id, y = value)) +
+      geom_point(aes(text = node_id, color = as.factor(reach_id))) +
+      
+      ## Uncertainty bounds
+      geom_line(aes(y = uncert), color = "red", data = nodeaccumdf()) +
+      geom_line(aes(y = -uncert), color = "red", data = nodeaccumdf()) +
+      geom_line(aes(y = 1.96 * uncert), color = "red", linetype = 2, 
+                data = nodeaccumdf()) +
+      geom_line(aes(y = -1.96 * uncert), color = "red", linetype = 2, 
+                data = nodeaccumdf()) +
       # facet_wrap(~reach_id, scales = "free_x") +
-      facet_grid(variable ~ ., scales = "free", space = "free_x")    # gg
+      facet_grid(variable ~ ., scales = "free", space = "free_x") +
+      scale_color_manual(values = reachcolvec())
+      
     ggplotly(gg, tooltip = "text") %>% 
       layout(dragmode = "select") %>% 
+      hide_legend() %>% 
       highlight(on = "plotly_selected")
   })
 
   # Node area plot
   selNode <- numeric(0)
   observe({
-    seldf <- nodeaccum_shared$data(withSelection = TRUE)
-    selNode <<- filter(seldf, selected_) %>% 
+    seldf <- try(nodeaccum_shared()$data(withSelection = TRUE))
+    if (inherits(seldf, "try-error")) browser()
+    # browser()
+    selNodes_cur <- filter(seldf, selected_) %>% 
       pull(node_id)
+    
+    if (length(selNodes_cur)) selNode <<- selNodes_cur
   })
   
   options(opacityDim = 0.5)
   output$nodearea_plot <- renderPlotly({
     if (nrow(pixeldata_forplot()) == 0) return(NULL)
-    gg <- ggplot(pixeldata_shared) +
-      geom_rect(aes(xmin = area_lag, xmax = cum_area, text = pixel_id,
-                    ymin = 0, ymax = water_frac, fill = classification)) +
+    gg <- ggplot(pixeldata_shared)
+    # browser()
+    if (length(selNode) == 1) { # Make it a rectangle plot
+      gg <- gg + 
+        geom_rect(aes(xmin = area_lag, xmax = cum_area, text = pixel_id,
+                      ymin = 0, ymax = water_frac, fill = classification))
+    }
+
+    gg <- gg +
       geom_point(aes(x = cum_area, y = water_frac, color = classification), size = 0.1) +
       scale_fill_manual(values = classcolvec) +
       scale_color_manual(values = classcolvec) +
@@ -268,10 +314,10 @@ function(input, output, session) {
       facet_wrap(~node_id, scales = "free_x") +
       guides(color = FALSE, fill = FALSE)
     
-    
-    # gg <- gg + 
-    #   geom_rect(aes(xmin = 0, ymin = 0, xmax = true_area, ymax = 1), 
-    #             fill = NA, color = "gray30", linetype = 2)
+    # Add true area
+    gg <- gg +
+      geom_rect(aes(xmin = 0, ymin = 0, xmax = true_area, ymax = 1),
+                fill = NA, color = "gray30", linetype = 2)
     
     ggplotly(gg, tooltip = "text") %>% 
       layout(dragmode = "select") %>%

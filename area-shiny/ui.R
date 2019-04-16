@@ -1,7 +1,9 @@
 
 ui <- dashboardPage(
-  dashboardHeader(),
-  dashboardSidebar(),
+  dashboardHeader(title = "SWOT Area Error"),
+  dashboardSidebar(
+    radioButtons("runselect", "Flow Condition", choices = c("High", "Low"))
+  ),
   dashboardBody(
     fluidRow(
       column(width = 6,
@@ -15,6 +17,7 @@ ui <- dashboardPage(
             actionButton("nodePlot", "Plot"),
             actionButton("nodePurge", "Purge"),
             actionButton("nodeRestore", "Restore All"),
+            checkboxInput("err_rel", "Relative"),
             plotlyOutput("node_accum")),
         box(title = "Node Area", width = NULL,
             plotlyOutput("nodearea_plot"))

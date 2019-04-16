@@ -3,20 +3,26 @@
 # library(shinyFiles)
 library(shinythemes)
 library(shinydashboard)
-# library(rivertile)
-devtools::load_all("~/Documents/rivertile")
-source("../lib/rivertile.R")
+library(rivertile)
+# devtools::load_all("~/Documents/rivertile")
+source("lib/rivertile.R")
 library(ncdf4)
 library(fs)
 library(ggplot2)
 library(leaflet)
 library(purrr)
 library(dplyr)
+library(tidyr)
 library(plotly)
 library(crosstalk)
 
 
 theme_set(theme_bw())
+
+## Run urls
+runurls <- c("https://osu.box.com/shared/static/9ng2ys6kubcbkqu8riar0l89uzk101zr.rdata",
+             "https://osu.box.com/shared/static/ps8lh8wn8ju9mth7lk7s8btpi0t9c92z.rdata") %>% 
+  setNames(c("High", "Low"))
 
 ## server.R objects
 
@@ -93,17 +99,4 @@ purge_nodes <- function(rtdata, purgenodes = numeric(0),
   }
   out
 }
-
-
-# Test data
-testpixc <- join_pixc("~/Documents/swot-error/output/sac18/") %>% 
-  rename(node_id = node_index) %>% 
-  filter(node_id == 300) %>% 
-  dplyr::arrange(desc(water_frac)) %>% 
-  mutate(cum_area = cumsum(pixel_area), area_lag = 
-           dplyr::lag(cum_area, default = 0), 
-         classification = as.factor(classification)) %>% 
-  ungroup()
-
-testpixc_shared <- highlight_key(testpixc)
 
