@@ -1,0 +1,54 @@
+---
+title: "notebook20190416"
+author: "Mark Hagemann"
+date: "4/16/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+Doing riverobs runs with Rui's new simulations on hydro. 
+
+First need to make the manifest, a la roruns.csv.
+
+Can I make a function to take the file paths and populate a list/dataframe of run parameters?
+
+```{r}
+roruns <- read.csv("../src/roruns.csv")
+glimpse(roruns)
+```
+
+```{r}
+pixcdf <- read.csv("../output/hydro/pixclocs.txt", sep = "/", header = FALSE,
+                   stringsAsFactors = FALSE)
+
+strings1 <- str_split(pixcdf[[4]], pattern = "_", simplify = TRUE) %>% 
+  as.data.frame(stringsAsFactors = FALSE)
+strings2 <- str_split(pixcdf[[3]], pattern = "_", simplify = TRUE) %>% 
+  as.data.frame(stringsAsFactors = FALSE)
+
+out <- list(
+  water_sig0 = gsub("water", "", strings1[[7]]),
+  land_sig0 = gsub("nlcd", "", strings1[[6]]),
+  smearing = strings1[[8]],
+  pass = strings1[[4]],
+  tile = strings1[[5]],
+  refdem = strings2[[1]],
+  day = strings2[[4]]
+) %>% as.data.frame()
+
+out
+
+```
+
+
+
+```{r}
+dput(out[3, ])
+out[3,] %>% 
+  knitr::kable(format = "html")
+```
+
