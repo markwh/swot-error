@@ -80,12 +80,8 @@ def get_gdem_pixc(indir, gdem_file, out_pixc = 'fake_pixel_cloud.nc'):
     fake_pixc_from_gdem.fake_pixc_from_gdem(gdem_file, pixc_file, out_pixc)
     return out_pixc
 
-def rodryrun(outdir, indir, priordb, delete=False):
-    print("out: ", outdir)
-    print("in: ", indir)
-    print("prior: ", priordb)
-
-def rorun(outdir, indir, priordb, gdem_name, pixc_file_gdem=None, delete=False):
+def rorun(outdir, indir, priordb, gdem_name, gdem_dir=None,
+          pixc_file_gdem=None, delete=False):
     """Do a single row's 2 riverobs runs."""
     outpath = os.path.abspath(os.path.expandvars(outdir))
     inpath = os.path.abspath(os.path.expandvars(indir))
@@ -93,6 +89,9 @@ def rorun(outdir, indir, priordb, gdem_name, pixc_file_gdem=None, delete=False):
 
     pixc_file = inpath + '/pixel_cloud.nc'
     if pixc_file_gdem is None:
+        if gdem_dir is None:
+            gdem_dir = indir
+        gdempath = os.path.abspath(os.path.expandvars(gdem_dir))
         pixc_file_gdem = get_gdem_pixc(inpath, gdem_file=gdem_name)
     
     # Create directory if necessary
@@ -147,17 +146,21 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('run_csv', type=str, 
         help='csv file with run info')
-    parser.add_argument('--delete', help='delete and rewrite if existing?')
-    
+    parser.add_argument('--delete', help='delete and rewrite if existing?',
+                        action='store_true')
+    parser.add_argument('-n', type='int',
+                        help='Optional row number of single run')
     args = parser.parse_args()
     
     # read the csv
     rundf = pandas.read_csv(args.run_csv)
+    if args.n is not None:
+        rundf = rundf[args.n, ]
     
     # For fake pixel clouds--unique combinations of case, flow, pass, gdem
-    unqdf = rundf[['case', 'pass', 'bndry_cond', 'gdem_name']].drop_duplicates()
+    unqdf = rundf[['case', 'pass', 'day', 'tile', 'gdem_name']].drop_duplicates()
     unqdf['fake_ind'] = [str(x) for x in range(1, len(unqdf) + 1)]
-    rundf = rundf.merge(unqdf, on=['pass','bndry_cond','case', 'gdem_name'], 
+    rundf = rundf.merge(unqdf, on=['pass','day','case', 'gdem_name'], 
                         how='left')
     
     # iterate over rows of data frame
@@ -167,7 +170,7 @@ def main():
         check_make_fake_pixc(fakefile, row['gdem_name'], row['indir'])
                 
         rorun(outdir=row['outdir'], indir=row['indir'], priordb=row['priordb'],
-              gdem_name=row['gdem_name'],
+              gdem_name=row['gdem_name'], gdem_dir=row['gdem_dir'],
               pixc_file_gdem=fakefile, delete=args.delete)
               
         shutil.copy(fakefile, row['outdir'] + '/fake_pixc.nc')
