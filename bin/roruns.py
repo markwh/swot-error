@@ -148,14 +148,14 @@ def main():
         help='csv file with run info')
     parser.add_argument('--delete', help='delete and rewrite if existing?',
                         action='store_true')
-    parser.add_argument('-n', type='int',
+    parser.add_argument('-n', type=int,
                         help='Optional row number of single run')
     args = parser.parse_args()
     
     # read the csv
     rundf = pandas.read_csv(args.run_csv)
     if args.n is not None:
-        rundf = rundf[args.n, ]
+        rundf = rundf.iloc[[args.n - 1]]
     
     # For fake pixel clouds--unique combinations of case, flow, pass, gdem
     unqdf = rundf[['case', 'pass', 'day', 'tile', 'gdem_name']].drop_duplicates()
@@ -172,8 +172,11 @@ def main():
         rorun(outdir=row['outdir'], indir=row['indir'], priordb=row['priordb'],
               gdem_name=row['gdem_name'], gdem_dir=row['gdem_dir'],
               pixc_file_gdem=fakefile, delete=args.delete)
-              
+        
+        inpath = os.path.abspath(os.path.expandvars(row['indir']))
+        pixc_file = inpath + '/pixel_cloud.nc'
         shutil.copy(fakefile, row['outdir'] + '/fake_pixc.nc')
+        shutil.copy(pixc_file, row['outdir'] + '/pixel_cloud.nc')
     
     # cleanup (fake pixel clouds are copied into indiv. directories)
     for index, row in unqdf.iterrows():

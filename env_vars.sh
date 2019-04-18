@@ -12,6 +12,7 @@ export SACDIR7="D:\data\sac-simulator-output\tile-Sac-11Feb2019\GDEM-DEM-ellip-2
 export SACDIR8="D:\data\sac-simulator-output\tile-Sac-11Feb2019\GDEM-DEM-ellip-220-0249\cycle_0001_pass_0249_001L_nlcd-100dB_darkWater-3dBGMF_50m_WC"
 export SACDIR9="D:\data\sac-simulator-output\tile-Sac-11Feb2019\GDEM-DEM-ellip-220-0249\cycle_0001_pass_0249_001L_nlcd-100dB_water10dB_50m_CBE"
 
-export PRIORLOC1='D:/data/SWOT-prior/PriorDistributionFolder/netcdfv2/'
+#export PRIORLOC1='D:/data/SWOT-prior/PriorDistributionFolder_old/netcdfv2/'
+export PRIORLOC1='D:/data/SWOT-prior/PriorDistributionFolder/netcdfV4/'
 export PRIORLOC2='C:\Users\markh\Documents\swot-error\data\priordb-update\Sac_sample_db9_4mark.nc'
 export ROBIN='C:/Users/markh/Documents/RiverObs/src/bin/'
