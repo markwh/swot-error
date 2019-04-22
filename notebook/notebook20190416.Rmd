@@ -98,7 +98,11 @@ newruns <- left_join(out, out_gdem, by = c("pass", "tile", "day")) %>%
 
 read.csv("../src/roruns.csv", stringsAsFactors = FALSE) %>% 
   rbind(newruns)
-  
+
+glimpse(newruns)
+
+newruns$gdem_name
+
 ```
 
 
