@@ -7,7 +7,7 @@ ui <- dashboardPage(
   dashboardBody(
     fluidRow(
       column(width = 6,
-        box(title = "Reach Area Relative Error", width = NULL,
+        box(title = "Reach Area Standardized Error", width = NULL,
             plotlyOutput("reach_relerrplot")),
         box(title = "Map", width = NULL,
             checkboxInput("map_gdem", "Show GDEM Truth"), 
@@ -17,7 +17,7 @@ ui <- dashboardPage(
             actionButton("nodePlot", "Plot"),
             actionButton("nodePurge", "Purge"),
             actionButton("nodeRestore", "Restore All"),
-            checkboxInput("err_rel", "Relative"),
+            checkboxInput("err_rel", "Standardize"),
             plotlyOutput("node_accum")),
         box(title = "Node Area", width = NULL,
             plotlyOutput("nodearea_plot"))
