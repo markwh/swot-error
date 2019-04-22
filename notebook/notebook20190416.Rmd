@@ -101,3 +101,74 @@ read.csv("../src/roruns.csv", stringsAsFactors = FALSE) %>%
   
 ```
 
+
+So much for proof of concept. Now make a function.
+
+```{r}
+rorun_manifest <- function(pixcfiles, gdemfiles, startnum = 1) {
+  pixcdf <- read.csv(pixcfiles, sep = "/", header = FALSE,
+                   stringsAsFactors = FALSE)
+  
+  strings1 <- str_split(pixcdf[[4]], pattern = "_", simplify = TRUE) %>% 
+    as.data.frame(stringsAsFactors = FALSE)
+  strings2 <- str_split(pixcdf[[3]], pattern = "_", simplify = TRUE) %>% 
+    as.data.frame(stringsAsFactors = FALSE)
+  strings3 <- str_split(pixcdf[[2]], pattern = "_", simplify = TRUE) %>% 
+    as.data.frame(stringsAsFactors = FALSE)
+  
+  out1 <- list(
+    water_sig0 = gsub("water", "", strings1[[7]]),
+    land_sig0 = gsub("nlcd", "", strings1[[6]]),
+    smearing = strings1[[8]],
+    pass = strings1[[4]],
+    tile = strings1[[5]],
+    refdem = strings2[[1]],
+    refdem_res = strings3[[7]],
+    day = strings2[[4]],
+    indir = apply(pixcdf, 1, function(x) paste(x[-length(x)], collapse = "/"))
+  ) %>% as.data.frame(stringsAsFactors = FALSE)
+  
+  # Gdems now
+  
+  gdemdf <- read.csv(gdemfiles, sep = "/", header = FALSE,
+                   stringsAsFactors = FALSE)
+  
+  gd1 <- str_split(gdemdf[[4]], pattern = "_", simplify = TRUE) %>% 
+    as.data.frame(stringsAsFactors = FALSE)
+  gd1
+  gd2 <- str_split(gdemdf[[3]], pattern = "_", simplify = TRUE) %>% 
+    as.data.frame(stringsAsFactors = FALSE)
+  gd2
+  
+  out2 <- list(
+    pass = gd1[[4]],
+    tile = gd1[[5]],
+    day = gd2[[4]],
+    gdem_dir = apply(gdemdf, 1, function(x) paste(x[-length(x)], collapse = "/")),
+    gdem_name = apply(gdemdf, 1, function(x) x[length(x)])
+  ) %>% as.data.frame(stringsAsFactors = FALSE)
+  
+  # Join and return
+  
+  out <- left_join(out1, out2, by = c("pass", "tile", "day")) %>% 
+    mutate(outroot = "./output/sac",
+         case = "Sacramento",
+         outno = 1:n() + 36,
+         fmtno = sprintf("%02d", outno),
+         outdir = paste0(outroot, "/", fmtno),
+         priordb = "$PRIORLOC3",
+         notes = "", rtviz_url = NA_character_) %>% 
+    select(outroot, outno, fmtno, outdir, indir, gdem_dir, priordb, case, 
+           pass, day, smearing, land_sig0, water_sig0, gdem_name, notes, 
+           rtviz_url, refdem, refdem_res, tile)
+  out
+}
+
+rorun_manifest("../output/hydro/pixclocs.txt", "../output/hydro/gdemlocs.txt", 37) %>% 
+  readr::write_csv("../src/roruns37.csv")
+
+```
+
+
+
+

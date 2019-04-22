@@ -72,11 +72,15 @@ def simple_rivertile(pixc_file, out_riverobs_file,
     l2pixc_to_rivertile.rivertile_product.to_ncfile(out_riverobs_file)
 
 
-def get_gdem_pixc(indir, gdem_file, out_pixc = 'fake_pixel_cloud.nc'):
+def get_gdem_pixc(indir, gdem_file, gdem_dir=None, 
+                  out_pixc='fake_pixel_cloud.nc'):
     """Writes and returns a fake pixel cloud in the local directory."""
     pixc_file = indir + '/pixel_cloud.nc'
     # gdem_file = glob.glob(indir + '/gdem_truth*nc')[0]
-    gdem_file = indir + '/' + gdem_file
+    if gdem_dir is None:
+        gdem_dir = indir
+    gdempath = os.path.abspath(os.path.expandvars(gdem_dir))
+    gdem_file = gdempath + '/' + gdem_file
     fake_pixc_from_gdem.fake_pixc_from_gdem(gdem_file, pixc_file, out_pixc)
     return out_pixc
 
@@ -88,11 +92,12 @@ def rorun(outdir, indir, priordb, gdem_name, gdem_dir=None,
     priorpath = os.path.abspath(os.path.expandvars(priordb))
 
     pixc_file = inpath + '/pixel_cloud.nc'
+    print("pixc: ", pixc_file)
     if pixc_file_gdem is None:
         if gdem_dir is None:
             gdem_dir = indir
         gdempath = os.path.abspath(os.path.expandvars(gdem_dir))
-        pixc_file_gdem = get_gdem_pixc(inpath, gdem_file=gdem_name)
+        pixc_file_gdem = get_gdem_pixc(inpath, gdem_name, gdempath)
     
     # Create directory if necessary
     try: 
@@ -134,12 +139,17 @@ def rorun(outdir, indir, priordb, gdem_name, gdem_dir=None,
                      out_pixc_vector_file=out_pcv_file_gdem_dil2, 
                      config=config4, delete=delete)
 
-def check_make_fake_pixc(fake_pixc_name, gdem_name, indir):
+def check_make_fake_pixc(fake_pixc_name, gdem_name, indir, gdem_dir=None):
     if (os.path.isfile(fake_pixc_name)):
         return
     inpath = os.path.abspath(os.path.expandvars(indir))
     in_pixc = inpath + '/pixel_cloud.nc'
-    get_gdem_pixc(inpath, gdem_file=gdem_name, out_pixc = fake_pixc_name)
+    
+    if gdem_dir is None:
+        gdem_dir = indir
+    gdempath = os.path.abspath(os.path.expandvars(gdem_dir))
+    # pixc_file_gdem = get_gdem_pixc(gdempath, gdem_file=gdem_name)
+    get_gdem_pixc(inpath, gdem_name, gdempath, out_pixc = fake_pixc_name)
 
 def main():
     print("running!")
@@ -151,12 +161,13 @@ def main():
     parser.add_argument('-n', type=int,
                         help='Optional row number of single run')
     args = parser.parse_args()
-    
     # read the csv
     rundf = pandas.read_csv(args.run_csv)
     if args.n is not None:
+        print("iloc,", args.n - 1)
         rundf = rundf.iloc[[args.n - 1]]
     
+    print(rundf)
     # For fake pixel clouds--unique combinations of case, flow, pass, gdem
     unqdf = rundf[['case', 'pass', 'day', 'tile', 'gdem_name']].drop_duplicates()
     unqdf['fake_ind'] = [str(x) for x in range(1, len(unqdf) + 1)]
@@ -167,8 +178,11 @@ def main():
     for index, row in rundf.iterrows():
         fakefile='fake_pixc' + row['fake_ind'] + '.nc'
         # if fake pixc exists, use it--otherwise make it. 
-        check_make_fake_pixc(fakefile, row['gdem_name'], row['indir'])
-                
+        print("fake pixc...")
+        check_make_fake_pixc(fakefile, row['gdem_name'], row['indir'], 
+                             gdem_dir = row['gdem_dir'])
+        
+        print("rorun...")
         rorun(outdir=row['outdir'], indir=row['indir'], priordb=row['priordb'],
               gdem_name=row['gdem_name'], gdem_dir=row['gdem_dir'],
               pixc_file_gdem=fakefile, delete=args.delete)
