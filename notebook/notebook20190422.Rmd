@@ -1,0 +1,183 @@
+---
+title: "notebook20190422"
+author: "Mark Hagemann"
+date: "4/22/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+I'm going to try prototyping a python function to flag sluices using upstream and downstream connectivity. I would prototype it in R, but I'm worried about recursion performance. Bah, it won't be that much of an issue. 
+
+Start with a netcdf for the pixcvec. 
+
+```{r}
+# Mode function from https://stackoverflow.com/a/8189441
+
+Mode <- function(x) {
+  ux <- unique(x)
+  ux[which.max(tabulate(match(x, ux)))]
+}
+```
+
+
+```{r}
+library(ncdf4)
+pcvpath <- path(rodir(18), "pcv.nc")
+pcvnc <- nc_open(pcvpath)
+
+getvar <- function(nc, varid) as.vector(ncvar_get(nc = nc, varid = varid))#, 
+                                                  # start = 463, count = 3866))
+
+# slant plane coordinates
+rangeinds <- getvar(pcvnc, "range_index")
+aziminds <- getvar(pcvnc, "azimuth_index")
+
+# dominant segmentation label mask
+seglabs <- getvar(pcvnc, "segmentation_label")
+segmask <- seglabs == Mode(seglabs)
+
+# Along-reach coordinates
+reachinds <- getvar(pcvnc, "reach_index")
+nodeinds <- getvar(pcvnc, "node_index")
+
+adjust_along <- function(along, reachinds) {
+  along_split <- split(along, reachinds)
+  along_rezero <- map(along_split, function(x) x - min(x))
+  
+  nreaches <- length(along_split)
+  shifts <- c(0, map_dbl(along_rezero, max))[1:nreaches] %>% 
+    cumsum()
+  out <- map2(along_rezero, shifts, function(x, y) x + y) %>% 
+    unsplit(reachinds)
+  out
+}
+along <- getvar(pcvnc, "along_reach") %>% 
+  adjust_along(nodeinds)
+
+
+
+# function for finding indices of down/upstream-most points
+# alongreach <- along; reachinds <- reachinds; n <- 100 
+downstreammost <- function(alongreach, reachinds, n = 100) {
+  reachmask <- reachinds == max(reachinds)
+  fakealong <- alongreach
+  fakealong[!reachmask] <- -9e7
+  reachords <- order(fakealong)
+  out <- tail(reachords, n = n)
+  out
+}
+
+# randind <- sample(1:length(rangeinds), 1)
+# this_range <- rangeinds[randind]; this_azimuth <- aziminds[randind]; this_along <- along[randind]
+# nn <- 2 # neighborhood size (max distance from self)
+stream_neighbors <- function(index, nn = 2, which = c("up", "down")) {
+  which <- match.arg(which)
+  this_range <- rangeinds[index]
+  this_azimuth <- aziminds[index]
+  this_along <- along[index]
+  neighbormask <- (rangeinds %in% (this_range + -nn:nn)) & 
+                  (aziminds %in% (this_azimuth + -nn:nn))
+  us_submask <- along[neighbormask] <= this_along
+  if (which == "down") us_submask <- !us_submask
+  neighbormask[neighbormask] <- us_submask
+  out <- which(neighbormask)
+  out
+}
+
+is_connected <- rep(FALSE, length(rangeinds))
+
+# recursive function to connect upstream from a single point
+count <- 1
+
+options(expressions = 100000)
+connect_upstream <- function(ind) {
+  if (is_connected[ind]) return() #|| !segmask[ind]) return()
+  is_connected[ind] <<- TRUE
+  if (count %% 1000 == 0) cat(count, ind, "\n")
+  count <<- count + 1
+  # Recurse upstream
+  for (neighbor in stream_neighbors(ind, nn = 2, which = "up")) {
+    connect_upstream(neighbor)
+  }
+}
+
+is_connected_ds <- rep(FALSE, length(rangeinds))
+dscount <- 1
+
+connect_downstream <- function(ind) {
+  if (is_connected_ds[ind]) return() #|| !segmask[ind]) return()
+  is_connected_ds[ind] <<- TRUE
+  if (dscount %% 1000 == 0) cat(dscount, ind, "\n")
+  dscount <<- dscount + 1
+  # Recurse upstream
+  for (neighbor in stream_neighbors(ind, nn = 2, which = "down")) {
+    connect_downstream(neighbor)
+  }
+}
+
+
+
+# for (index in downstreammost(along, reachinds, 100)) {
+startnode_up <- min(nodeinds) # 225
+startnode_dn <- max(nodeinds) # 210
+startinds_up <- which(nodeinds == startnode_up)
+startinds_dn <- which(nodeinds == startnode_dn)
+for (index in startinds_up) {
+  connect_upstream(index)
+}
+for (index in startinds_dn) {
+  connect_downstream(index)
+}
+
+pixcinds <- getvar(pcvnc, "pixc_index")
+```
+
+Now map it!
+
+```{r}
+library(leaflet)
+pcvdf <- join_pixc(rodir(18)) %>% 
+  # filter(pixc_index %in% pixcinds) %>% 
+  arrange(pixc_index)
+all_equal(pcvdf$pixc_index, pixcinds)
+
+pcvdf$connected <- is_connected_ds + 2 * is_connected
+
+
+fillpal <- colorNumeric(c("blue", "red"), domain = pcvdf$connected)
+
+# getthese <- which(getvar(pcvnc, "node_index") %in% 210:225)
+# head(getthese)
+# min(getthese); max(getthese)
+# plot(getthese, type = "l")
+
+pcvdf %>% 
+  mutate(index = 1:n()) %>% 
+  # filter(pixc_index %in% pixcinds) %>% 
+  # filter(reach_index == 4) %>%
+  # filter(node_index %in% 210:225) %>% 
+  # filter(is_connected == 1) %>% 
+  # glimpse()
+  leaflet() %>% 
+  addTiles() %>% 
+  addCircles(radius = ~sqrt(pixel_area / pi), 
+             fillColor = ~fillpal(connected),
+             stroke = FALSE, fillOpacity = 0.8, 
+             # popup = ~sprintf("connected: %s", connected))
+             # popup = ~sprintf("reach: %s \nnode: %s", reach_index, node_index))
+             popup = ~sprintf("ind: %s, r: %s \na: %s \ns %02g",
+                              index, range_index, azimuth_index, along_reach))
+```
+
+
+Troubleshooting:
+
+```{r}
+upstream_neighbors(54299, 3) %>% sort()
+```
+
+
