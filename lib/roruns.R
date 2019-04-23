@@ -22,8 +22,9 @@ romatch <- function(rorow, vary) {
 #' Fetch the directory path for a given rorun, specified as a row number of roruns.csv.
 #' 
 #' @param rorow Row number in roruns.csv to reference
-rodir <- function(rorow) {
-  basedir <- "~/Documents/swot-error/"
+rodir <- function(rorow, 
+                  basedir = getOption("ro_basedir", 
+                                      "~/Documents/swot-error/")) {
   out <- normalizePath(fs::path(basedir, roruns$outdir[rorow]))
   names(out) <- roruns$outno[rorow]
   out
