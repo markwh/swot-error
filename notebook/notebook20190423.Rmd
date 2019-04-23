@@ -1,0 +1,81 @@
+---
+title: "notebook20190423"
+author: "Mark Hagemann"
+date: "4/23/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Porting the recursive functions from yesterday into python. 
+
+- Need to deal with different scoping rules for Python
+- Start with enumerating the objects needed. 
+    - `is_connected` logical vector, mutable 
+    - `stream_neighbors` function
+    - `rangeinds`, `aziminds`, `along`
+    - arrays for `which(nodeinds == 225)`, `which(nodeinds == 210)`
+        - adjust these by -1 for python indexing
+
+
+```{python}
+import numpy as np
+
+rangeinds = np.array(r.rangeinds)
+aziminds = np.array(r.aziminds)
+along = np.array(r.along)
+startinds_up = np.add(r.startinds_up, -1)
+startinds_dn = np.add(r.startinds_dn, -1)
+
+nn = len(rangeinds)
+print(nn)
+```
+
+```{python}
+
+connected_up = np.zeros(nn, dtype = bool)
+connected_dn = np.zeros(nn, dtype = bool)
+
+def connect_upstream(ind):
+  if connected_up[ind]:
+    return()
+  connected_up[ind] = True
+  
+  for neighbor in stream_neighbors(ind, nnbr = 2, which = "up"):
+    connect_upstream(neighbor)
+
+def connect_downstream(ind):
+  if connected_dn[ind]:
+    return()
+  connected_dn[ind] = True
+  
+  for neighbor in stream_neighbors(ind, nnbr = 2, which = "down"):
+    connect_downstream(neighbor)
+
+
+
+def stream_neighbors(index, nnbr = 2, which = "up"):
+  this_range = np.add(rangeinds[index], np.arange(-nnbr, nnbr + 1))
+  this_azimuth = np.add(aziminds[index], np.arange(-nnbr, nnbr + 1))
+  this_along = along[index]
+  neighbormask = np.isin(rangeinds, this_range) & \
+                 np.isin(aziminds, this_azimuth)
+  submask = along[np.where(neighbormask)[0]] <= this_along
+  if which == "down":
+    submask = ~submask
+  neighbormask[np.where(neighbormask)[0]] = submask
+  out = np.where(neighbormask)[0]
+  return(out)
+  
+
+for index in startinds_up:
+  connect_upstream(index)
+  
+for index in startinds_dn:
+  connect_downstream(index)
+```
+
+
+First make sure I can show this for R case. Demonstrate on notorious sluice. DONE!
