@@ -38,11 +38,12 @@ aziminds <- getvar(pcvnc, "azimuth_index")
 
 # dominant segmentation label mask
 seglabs <- getvar(pcvnc, "segmentation_label")
-segmask <- seglabs == Mode(seglabs)
+# segmask <- seglabs == Mode(seglabs)
 
 # Along-reach coordinates
 reachinds <- getvar(pcvnc, "reach_index")
 nodeinds <- getvar(pcvnc, "node_index")
+pixcinds <- getvar(pcvnc, "pixc_index")
 
 adjust_along <- function(along, reachinds) {
   along_split <- split(along, reachinds)
@@ -58,8 +59,13 @@ adjust_along <- function(along, reachinds) {
 along <- getvar(pcvnc, "along_reach") %>% 
   adjust_along(nodeinds)
 
+startnode_up <- max(nodeinds) # 225
+startnode_dn <- min(nodeinds) # 210
+startinds_up <- which(nodeinds == startnode_up)
+startinds_dn <- which(nodeinds == startnode_dn)
+```
 
-
+```{r}
 # function for finding indices of down/upstream-most points
 # alongreach <- along; reachinds <- reachinds; n <- 100 
 downstreammost <- function(alongreach, reachinds, n = 100) {
@@ -122,10 +128,6 @@ connect_downstream <- function(ind) {
 
 
 # for (index in downstreammost(along, reachinds, 100)) {
-startnode_up <- min(nodeinds) # 225
-startnode_dn <- max(nodeinds) # 210
-startinds_up <- which(nodeinds == startnode_up)
-startinds_dn <- which(nodeinds == startnode_dn)
 for (index in startinds_up) {
   connect_upstream(index)
 }
@@ -133,7 +135,6 @@ for (index in startinds_dn) {
   connect_downstream(index)
 }
 
-pixcinds <- getvar(pcvnc, "pixc_index")
 ```
 
 Now map it!
