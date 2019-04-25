@@ -1,0 +1,218 @@
+---
+title: "notebook20190424"
+author: "Mark Hagemann"
+date: "4/24/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Today I'm moving on to validating riverobs output. Keep in mind axes of validation. Important ones are cross-track distance and number of pixels. This will require reading in all runs' output as validation data.frames. 
+
+- Can't do this yet, since for some reason the output folders didn't copy to my desktop. Redoing that now, but it will take some time to download 6.2 GB.
+    - Compress it first. Duh.
+
+```{r}
+valdirs <- list.dirs("../output/hydro/sac")[-1]
+
+valnames <- list.dirs("../output/hydro/sac", full.names = FALSE)[-1]
+
+valdfs <- map(valdirs, ~rt_valdata(.)) %>% 
+  setNames(valnames)
+
+```
+
+Add information about the runs
+
+```{r}
+runinfo <- read.csv("../src/roruns37.csv")
+glimpse(runinfo)
+```
+
+
+```{r}
+valdf_master <- bind_rows(valdfs, .id = "outno") %>% 
+  mutate(outno = as.numeric(outno)) %>% 
+  left_join(runinfo, by = "outno")
+
+valdf_master %>% 
+  group_by(pass) %>% 
+  summarize(minxt = min(xtrk_dist), maxxt = max(xtrk_dist), n = n())
+glimpse(valdf_master)
+```
+
+```{r}
+valdf_master %>% 
+  filter(variable == "height") %>% 
+  mutate(relerr = pixc_err / sigma_est) %>% 
+  # sample_n(5000) %>% 
+  ggplot(aes(x = xtrk_dist, color = as.factor(pass))) + 
+  # geom_point(aes(y = pixc_err^2))
+  # geom_point(aes(y = sigma_est^2))
+  geom_point(aes(y = relerr), alpha = 0.3)
+```
+
+```{r}
+valdf_master %>% 
+  filter(variable %in% c("latitude", "longitude"),
+         pass == 264) %>% 
+  select(reach_id, node_id, variable, gdem_val) %>% # glimpse()
+  unique() %>% 
+  spread(key = variable, value = gdem_val) %>%
+  leaflet() %>% 
+  addTiles() %>% 
+  addCircles(stroke = FALSE, fillOpacity = 0.8, radius = 50)
+```
+
+
+Alright, this is good--I am getting my first real plots of errors as a function of cross-track distance. What's missing is control for other factors. 
+
+- uncertainty estimate: I can control for this using standardized error. 
+- flow condition. This is info I can get and put into a model. How to express it? Log deviations from geometric mean?
+- spatial extent. Filter to only include nodes that are in common across all runs? No, just roll with it. It's the same river. 
+- run characteristics (sigma0, prior db, ref dem resolution)
+- Truth flagging. 
+
+Proposal: Do a set of preliminary analysis with only outline/bullet-point text and all evental figures and tables. 
+
+The scope of this is already rather large, especially if/when I add in different cases. But I should leave those as a separate section. Or I could just not include other cases. The main advantages of having more cases are:
+
+- increase range of x-track
+- increase range of npixels
+- Address multichannel? 
+
+
+### Maps of passes, nodes colored by number of runs observing
+
+```{r}
+pixcnc <- path(rodir(18), "pixel_cloud.nc")
+pass_mapdf <- function(pixcnc, outlen = 100) {
+  dfin <- pixc_read(pixcnc, group = "tvp")
+  nrin <- nrow(dfin)
+  sampint <- floor(nrin / outlen)
+  sampinds <- seq(1, nrin, by = sampint)
+  out <- dfin[c("time", "latitude", "longitude")][sampinds, ]
+  out
+}
+
+passmapdf <- paste0(valdirs, "/pixel_cloud.nc") %>% 
+  map(pass_mapdf) %>% 
+  setNames(valnames) %>% 
+  bind_rows(.id = "run") %>% 
+  mutate(outno = as.numeric(run)) %>% 
+  left_join(runinfo, by = "outno")
+```
+
+Nodes map colored by number of runs observing. For this I will need the prior db. But I can get the other info pretty easily
+
+```{r}
+ncloc <- path("D:/data/SWOT-prior/PriorDistributionFolder/netcdfV4/", "NA07.nc")
+priornc <- nc_open(ncloc)
+nc_close(priornc)
+ncnodeids <- ncvar_get(priornc, "nodes/node_id") %>% as.vector()
+length(ncnodeids)
+
+nodecov <- valdf_master %>% 
+  filter(variable == "latitude") %>% 
+  group_by(node_id) %>% 
+  summarize(n = n())
+  
+ncinds <- which(ncnodeids %in% nodecov$node_id)
+
+priornode_read <- function(nodeids, ncfile) {
+  nc <- nc_open(ncfile)
+  on.exit(nc_close(nc))
+  
+  getvar <- function(var, ...) as.vector(ncvar_get(nc, var, ...))
+  ncnodeids <- getvar("nodes/node_id")
+  ncinds <- which(ncnodeids %in% nodeids)
+  outinds <- ncinds - min(ncinds) + 1
+  
+  readstart <- min(ncinds)
+  readlen <- max(ncinds) - min(ncinds) + 1
+  
+  out <- data.frame(
+    node_id = nodeids,
+    latitude = getvar("nodes/y", start = readstart, count = readlen)[outinds],
+    longitude = getvar("nodes/x", start = readstart, count = readlen)[outinds])
+  out
+}
+
+nodemapdf <- priornode_read(nodecov$node_id, ncloc) %>% 
+  left_join(nodecov, by = "node_id")
+```
+
+
+```{r}
+passmapdf %>% 
+  ggplot(aes(x = longitude, y = latitude)) + 
+  geom_line(aes(group = as.factor(pass))) + 
+  geom_point(aes(color = n), data = nodemapdf)
+```
+
+Put a background map on it. 
+
+```{r}
+library(ggmap)
+allat <- c(passmapdf$latitude, nodemapdf$latitude)
+allon <- c(passmapdf$longitude, nodemapdf$longitude)
+bbox <- c(min(allon), min(allat), max(allon), max(allat))
+
+bgmap <- get_map(location = bbox, maptype = "terrain")
+osmap <- get_map(location = bbox, source = "osm")
+
+
+ggmap(bgmap)
+ggmap(osmap, darken = c(0.5, "white")) +
+    # ggplot(aes()) + 
+  geom_line(aes(x = longitude, y = latitude,
+                group = as.factor(pass),
+                linetype = as.factor(pass)),
+            data = passmapdf) + 
+  geom_point(aes(x = longitude, y = latitude, color = n), 
+             data = nodemapdf) +
+  scale_color_viridis_c()
+
+
+```
+
+### Histograms of npix, xtrack
+
+```{r}
+glimpse(valdf_master)
+
+valdf_master %>% 
+  filter(variable == "latitude") %>% 
+  ggplot(aes(x = n_good_pix, fill = as.factor(pass))) +
+  geom_histogram()
+```
+
+```{r}
+valdf_master %>% 
+  filter(variable == "latitude") %>% 
+  ggplot(aes(x = xtrk_dist, fill = as.factor(pass))) +
+  geom_histogram()
+```
+
+
+Now flow condition
+
+```{r}
+flowdf <- read.csv("../data/sac_flow.csv", stringsAsFactors = FALSE) %>% 
+  transmute(date = lubridate::ymd_hm(DATE.TIME, tz = "America/Los_Angeles"),
+            date = as.Date(date),
+            flow = as.numeric(VALUE),
+            logdev = log(flow) - mean(log(flow), na.rm = TRUE))
+cdffun <- ecdf(na.omit(flowdf$flow))
+flowdf$qtl <- cdffun(flowdf$flow)
+
+rundates <- ymd(sprintf("2009%04d", runinfo$day))
+
+flowdf %>% 
+  right_join(filter(date %in% rundates)
+
+
+```
+

@@ -22,6 +22,9 @@ Porting the recursive functions from yesterday into python.
 
 ```{python}
 import numpy as np
+import sys
+
+sys.setrecursionlimit(100000) # allow for adequately deep recursion
 
 rangeinds = np.array(r.rangeinds)
 aziminds = np.array(r.aziminds)
@@ -39,20 +42,20 @@ connected_up = np.zeros(nn, dtype = bool)
 connected_dn = np.zeros(nn, dtype = bool)
 
 def connect_upstream(ind):
-  if connected_up[ind]:
-    return()
-  connected_up[ind] = True
-  
-  for neighbor in stream_neighbors(ind, nnbr = 2, which = "up"):
-    connect_upstream(neighbor)
+    if (connected_up[ind]):
+        return
+    # print("connecting: ", ind)
+    connected_up[ind] = True
+    for neighbor in stream_neighbors(ind, nnbr = 2, which = "up"):
+        # print(neighbor)
+        connect_upstream(neighbor)
 
 def connect_downstream(ind):
-  if connected_dn[ind]:
-    return()
-  connected_dn[ind] = True
-  
-  for neighbor in stream_neighbors(ind, nnbr = 2, which = "down"):
-    connect_downstream(neighbor)
+    if (connected_dn[ind]):
+        return
+    connected_dn[ind] = True
+    for neighbor in stream_neighbors(ind, nnbr = 2, which = "down"):
+        connect_downstream(neighbor)
 
 
 
@@ -67,15 +70,214 @@ def stream_neighbors(index, nnbr = 2, which = "up"):
     submask = ~submask
   neighbormask[np.where(neighbormask)[0]] = submask
   out = np.where(neighbormask)[0]
-  return(out)
+  return out
   
 
 for index in startinds_up:
+  # print(index)
   connect_upstream(index)
   
 for index in startinds_dn:
+  # print(index)
   connect_downstream(index)
 ```
 
 
 First make sure I can show this for R case. Demonstrate on notorious sluice. DONE!
+
+Now I've got the python recursion going. It takes on the order of a minute, I'd guess. Anyway, optimization is not for me to do. 
+
+
+Now map it!
+
+```{r}
+library(leaflet)
+pcvdf <- join_pixc(rodir(18)) %>% 
+  # filter(pixc_index %in% pixcinds) %>% 
+  arrange(pixc_index)
+all_equal(pcvdf$pixc_index, pixcinds)
+
+pcvdf$connected <- py$connected_dn + 2 * py$connected_up
+
+
+fillpal <- colorFactor(palette = "Set1", domain = pcvdf$connected)
+```
+
+
+```{r}
+
+for (reachind in unique(reachinds)) {
+  llmap <- pcvdf %>% 
+  mutate(index = pixcinds) %>% 
+  # filter(pixc_index %in% pixcinds) %>% 
+  filter(reach_index == reachind) %>%
+  # filter(node_index %in% 210:225) %>% 
+  # filter(is_connected == 1) %>% 
+  # glimpse()
+  leaflet() %>% 
+  addTiles() %>% 
+  addCircles(radius = ~sqrt(pixel_area / pi), 
+             fillColor = ~fillpal(connected),
+             stroke = FALSE, fillOpacity = 0.8, 
+             popup = ~sprintf("connected: %s", connected))
+             # popup = ~sprintf("reach: %s \nnode: %s", reach_index, node_index))
+             # popup = ~sprintf("ind: %s, r: %s \na: %s \ns %02g",
+             #                  index, range_index, azimuth_index, along_reach))
+  htmlwidgets::saveWidget(llmap, file = sprintf("connected_map_reach%s.html", reachind))
+}
+
+```
+
+
+Can I put this into a function that works on joined pixc? Of course, but no time for that just now. Best to just show:
+
+- each reach of simulator pcv
+- a single reach with gdem pcv overlaid
+
+Saving the reach maps was easy. Now make the gdem version (could be tricky and time-consuming.) Here's copied/modified from yesterday:
+
+```{r}
+gdempath <- path(rodir(18), "pcv_gdem.nc")
+gdemnc <- nc_open(gdempath)
+
+getvar <- function(nc, varid) as.vector(ncvar_get(nc = nc, varid = varid))#, 
+                                                  # start = 463, count = 3866))
+
+# slant plane coordinates
+rangeinds <- getvar(gdemnc, "range_index")
+aziminds <- getvar(gdemnc, "azimuth_index")
+
+# dominant segmentation label mask
+seglabs <- getvar(gdemnc, "segmentation_label")
+# segmask <- seglabs == Mode(seglabs)
+
+# Along-reach coordinates
+reachinds <- getvar(gdemnc, "reach_index")
+nodeinds <- getvar(gdemnc, "node_index")
+pixcinds <- getvar(gdemnc, "pixc_index")
+
+adjust_along <- function(along, reachinds) {
+  along_split <- split(along, reachinds)
+  along_rezero <- map(along_split, function(x) x - min(x))
+  
+  nreaches <- length(along_split)
+  shifts <- c(0, map_dbl(along_rezero, max))[1:nreaches] %>% 
+    cumsum()
+  out <- map2(along_rezero, shifts, function(x, y) x + y) %>% 
+    unsplit(reachinds)
+  out
+}
+along <- getvar(gdemnc, "along_reach") %>% 
+  adjust_along(nodeinds)
+
+startnode_up <- max(nodeinds) # 225
+startnode_dn <- min(nodeinds) # 210
+startinds_up <- which(nodeinds == startnode_up)
+startinds_dn <- which(nodeinds == startnode_dn)
+```
+
+Getting really messy here...
+
+
+
+
+```{python}
+import numpy as np
+import sys
+
+sys.setrecursionlimit(230000) # allow for adequately deep recursion
+
+rangeinds = np.array(r.rangeinds)
+aziminds = np.array(r.aziminds)
+along = np.array(r.along)
+startinds_up = np.add(r.startinds_up, -1)
+startinds_dn = np.add(r.startinds_dn, -1)
+
+nn = len(rangeinds)
+print(nn)
+```
+
+
+```{python}
+connected_up = np.zeros(nn, dtype = bool)
+connected_dn = np.zeros(nn, dtype = bool)
+
+def connect_upstream(ind):
+    if (connected_up[ind]):
+        return
+    # print("connecting: ", ind)
+    connected_up[ind] = True
+    for neighbor in stream_neighbors(ind, nnbr = 2, which = "up"):
+        # print(neighbor)
+        connect_upstream(neighbor)
+
+def connect_downstream(ind):
+    if (connected_dn[ind]):
+        return
+    connected_dn[ind] = True
+    for neighbor in stream_neighbors(ind, nnbr = 2, which = "down"):
+        connect_downstream(neighbor)
+
+
+def stream_neighbors(index, nnbr = 2, which = "up"):
+  this_range = np.add(rangeinds[index], np.arange(-nnbr, nnbr + 1))
+  this_azimuth = np.add(aziminds[index], np.arange(-nnbr, nnbr + 1))
+  this_along = along[index]
+  neighbormask = np.isin(rangeinds, this_range) & \
+                 np.isin(aziminds, this_azimuth)
+  submask = along[np.where(neighbormask)[0]] <= this_along
+  if which == "down":
+    submask = ~submask
+  neighbormask[np.where(neighbormask)[0]] = submask
+  out = np.where(neighbormask)[0]
+  return out
+  
+
+for index in startinds_up:
+  # print(index)
+  connect_upstream(index)
+  
+for index in startinds_dn:
+  # print(index)
+  connect_downstream(index)
+```
+
+Mapping
+
+```{r}
+library(leaflet)
+gdemdf <- join_pixc(rodir(18), pcvname = "pcv_gdem.nc", pixcname = "fake_pixc.nc") %>% 
+  # filter(pixc_index %in% pixcinds) %>% 
+  arrange(pixc_index)
+all_equal(gdemdf$pixc_index, pixcinds)
+
+gdemdf$connected <- py$connected_dn + 2 * py$connected_up
+
+
+fillpal <- colorFactor(palette = "Set1", domain = gdemdf$connected)
+```
+
+
+```{r}
+
+for (reachind in 4) {
+  llmap <- gdemdf %>% 
+  mutate(index = pixcinds) %>% 
+  # filter(pixc_index %in% pixcinds) %>% 
+  filter(reach_index == reachind) %>%
+  # filter(node_index %in% 210:225) %>% 
+  # filter(is_connected == 1) %>% 
+  # glimpse()
+  leaflet() %>% 
+  addTiles() %>% 
+  addCircles(radius = ~sqrt(pixel_area / pi), 
+             fillColor = ~fillpal(connected),
+             stroke = FALSE, fillOpacity = 0.8, 
+             popup = ~sprintf("connected: %s", connected))
+             # popup = ~sprintf("reach: %s \nnode: %s", reach_index, node_index))
+             # popup = ~sprintf("ind: %s, r: %s \na: %s \ns %02g",
+             #                  index, range_index, azimuth_index, along_reach))
+  htmlwidgets::saveWidget(llmap, file = sprintf("connected_map_gdem_reach%s.html", reachind))
+}
+
+```
