@@ -576,12 +576,12 @@ connect4 <- function(pcdf) {
   
   # modify along_reach to continue across reach boundaries and coerce 
   # downstream-ness across node boundaries
-  along_split <- split(pcdf$along_reach, reachinds)
+  along_split <- split(pcdf$along_reach, nodeinds)
   along_rezero <- map(along_split, function(x) x - min(x))
   shifts <- c(0, map_dbl(along_rezero, max))[1:length(along_split)] %>% 
     cumsum()
   along <- map2(along_rezero, shifts, function(x, y) x + y) %>% 
-    unsplit(reachinds)
+    unsplit(nodeinds)
   
 
   # Lookup table for range-azimuth combos
@@ -602,7 +602,7 @@ connect4 <- function(pcdf) {
     this_along <- along[index]
     neighborinds <- match_range_azim(this_range + -nn:nn, 
                                      this_azimuth + -nn:nn)
-    ds_inds <- neighborinds[along[neighborinds] > this_along]
+    ds_inds <- neighborinds[along[neighborinds] >= this_along]
     ds_inds
   }
   
@@ -612,7 +612,7 @@ connect4 <- function(pcdf) {
     this_along <- along[index]
     neighborinds <- match_range_azim(this_range + -nn:nn, 
                                      this_azimuth + -nn:nn)
-    us_inds <- neighborinds[along[neighborinds] < this_along]
+    us_inds <- neighborinds[along[neighborinds] <= this_along]
     us_inds
   }
   
@@ -629,38 +629,46 @@ connect4 <- function(pcdf) {
     new_front <- numeric(length(front) * 10L)
     starti <- 1
     for (index in front) {
-      new_nbrs <- dnstream_neighbors(index, nn = nn)
+      new_nbrs <- dnstream_neighbors(index, nn = 2L)
       if (!(n_new_nbrs <- length(new_nbrs))) next
       endi <- starti + n_new_nbrs - 1
       new_front[starti:endi] <- new_nbrs
       starti <- endi + 1
     }
-    setdiff(new_front[1:endi], front)
+    # setdiff(new_front[1:endi], front)
+    setdiff(new_front[1:endi], which(connected_ds))
   }
   
   advance_front_us <- function(front) {
     new_front <- numeric(length(front) * 10L)
     starti <- 1
     for (index in front) {
-      new_nbrs <- upstream_neighbors(index, nn = nn)
+      new_nbrs <- upstream_neighbors(index, nn = 2L)
       if (!(n_new_nbrs <- length(new_nbrs))) next
       endi <- starti + n_new_nbrs - 1
       new_front[starti:endi] <- new_nbrs
       starti <- endi + 1
     }
-    setdiff(new_front[1:endi], front)
+    setdiff(new_front[1:endi], which(connected_us))
   }
   
   # Do the iteration
   front_ds <- startinds_dn
+  frontno_ds <- integer(length(connected_ds)) # Track which front each pixel belongs to
+  frontno_ds[front_ds] <- 1L # Track which front each pixel belongs to
   connected_ds[startinds_dn] <- TRUE
-  count_ds <- 1
+  count_ds <- 1L
   while(length(front_ds)) {
-  # for (i in 1:300) {
+  # for (i in 1:600) {
     front_ds <- advance_front_ds(front_ds)
     connected_ds[front_ds] <- TRUE
-    count_ds <- count_ds + 1
-    if (count_ds %% 100 == 0) cat(sum(connected_ds))
+    
+    count_ds <- count_ds + 1L
+    frontno_ds[front_ds] <- count_ds
+
+    if (count_ds %% 100 == 0) {
+      cat(sum(connected_ds), length(front_ds), "\n")
+    }
   }
 
   message("Downstream connection complete")
@@ -669,20 +677,72 @@ connect4 <- function(pcdf) {
   connected_us[startinds_up] <- TRUE
   count_us <- 1
   while(length(front_us)) {
-  # for (i in 1:3) {
+  # for (i in 1:100) {
     front_us <- advance_front_us(front_us)
     connected_us[front_us] <- TRUE
     count_us <- count_us + 1
-    if (count_us %% 100 == 0) cat(sum(connected_us))
+    if (count_us %% 100 == 0) {
+        cat(sum(connected_us), length(front_us), "\n")
+    }
   }
   message("Upstream connection complete")
   
   out <- data.frame(up = connected_us, dn = connected_ds, 
-                    connected = (connected_us & connected_ds))
+                    connected = (connected_us & connected_ds),
+                    along = along,
+                    # frontno_up = frontno_up, 
+                    frontno_ds = frontno_ds)
   out
 }
 
 con4 <- connect4(testdf)
-profvis(connect4(testdf))
+# profvis(connect4(testdf))
+```
+
+Now map it, showing that it works.
+
+```{r}
+library(leaflet)
+
+
+mapdf <- testdf %>% 
+  cbind(con4) %>% 
+  mutate(con_no = as.factor(up * 2 + dn), radius = sqrt(pixel_area / pi)) %>% 
+  select(latitude, longitude, con_no, node_index, reach_index, pixc_index, 
+         radius, along, frontno_ds) %>% 
+  filter(reach_index == 5) %>% 
+  # sample_n(10000) %>% 
+  glimpse()
+
+
+conpal <- colorFactor("Set1", domain = mapdf$con_no)
+
+leaflet(mapdf) %>% 
+  addTiles() %>% 
+  addCircles(stroke = FALSE, fillOpacity = 0.8, fillColor = ~conpal(con_no), 
+             popup = ~paste(node_index, reach_index),
+             # popup = ~paste(node_index, reach_index),
+             radius = ~radius) 
+
+```
+
+
+
+Animate a map
+
+```{r}
+library(gganimate)
+
+gg4 <- ggplot(mapdf, aes(y = longitude, x = latitude)) +
+  geom_point(size = 0.2) +
+  geom_point(size = 0.2, aes(group = frontno_ds), 
+             data = filter(mapdf, frontno_ds > 1)) +
+  # coord_map()
+  coord_equal()
+  # coord_flip()
+gg4
+
+gg4 + transition_time(frontno_ds) +
+  shadow_mark()
 ```
 
