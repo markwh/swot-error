@@ -1,0 +1,16 @@
+---
+title: "Connectivity algorithm"
+author: "Mark Hagemann"
+date: "4/23/2019"
+output: ioslides_presentation
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+
+## Downstream Algorithm
+
+1. Initialize `connected_ds` 
+1. All pixels
