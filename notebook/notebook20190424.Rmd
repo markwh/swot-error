@@ -211,8 +211,478 @@ flowdf$qtl <- cdffun(flowdf$flow)
 rundates <- ymd(sprintf("2009%04d", runinfo$day))
 
 flowdf %>% 
-  right_join(filter(date %in% rundates)
+  right_join(filter(date %in% rundates))
 
 
+```
+
+## More work on connectivity algorithm. 
+
+I need to put this into a function. Actually several functions, but all with the same input--a joined pixc, pcv data.frame as returned by `join_pixc()`.
+
+```{r}
+testdf <- join_pixc(rodir(18))
+pcdf <- testdf %>% 
+  dplyr::filter(node_index %in% 210:225)
+```
+
+First a recursive R version.
+```{r}
+connect1 <- function(pcdf) {
+  rangeinds <- pcdf$range_index
+  aziminds <- pcdf$azimuth_index
+  seglabs <- pcdf$segmentation_label
+  reachinds <- pcdf$reach_index
+  nodeinds <- pcdf$node_index
+  pixcinds <- pcdf$pixc_index
+  
+  # modify along_reach to continue across reach boundaries and coerce 
+  # downstream-ness across node boundaries
+  along_split <- split(pcdf$along_reach, reachinds)
+  along_rezero <- map(along_split, function(x) x - min(x))
+  shifts <- c(0, map_dbl(along_rezero, max))[1:length(along_split)] %>% 
+    cumsum()
+  along <- map2(along_rezero, shifts, function(x, y) x + y) %>% 
+    unsplit(reachinds)
+
+  # Find indices of up/downstream neighbors for a given index
+  stream_neighbors <- function(index, nn = 2, which = c("up", "down")) {
+    which <- match.arg(which)
+    this_range <- rangeinds[index]
+    this_azimuth <- aziminds[index]
+    this_along <- along[index]
+    neighbormask <- (rangeinds %in% (this_range + -nn:nn)) & 
+                    (aziminds %in% (this_azimuth + -nn:nn))
+    us_submask <- along[neighbormask] <= this_along
+    if (which == "down") us_submask <- !us_submask
+    neighbormask[neighbormask] <- us_submask
+    out <- which(neighbormask)
+    out
+  }
+  
+  # Initialize connectivity vectors to prep for recursion
+  connected_ds <- rep(FALSE, length(rangeinds))
+  connected_us <- rep(FALSE, length(rangeinds))
+  uscount <- 1
+  dscount <- 1
+  
+  startinds_up <- which(pcdf$node_index == max(pcdf$node_index))
+  startinds_dn <- which(pcdf$node_index == min(pcdf$node_index))
+
+  options(expressions = 100000)
+  
+  connect_downstream <- function(ind) {
+    if (connected_ds[ind]) return() #|| !segmask[ind]) return()
+    connected_ds[ind] <<- TRUE
+    if (dscount %% 1000 == 0)
+      cat(sprintf("Connected %s of %s pixels\n", sum(connected_ds), 
+            length(connected_ds)))
+    dscount <<- dscount + 1
+    # Recurse upstream
+    nbrs <- stream_neighbors(ind, nn = 2, which = "down")
+    nbrs <- nbrs[!connected_ds[nbrs]]
+    for (neighbor in nbrs) {
+      connect_downstream(neighbor)
+    }
+  }
+  connect_upstream <- function(ind) {
+    if (connected_us[ind]) return() #|| !segmask[ind]) return()
+    connected_us[ind] <<- TRUE
+    if (uscount %% 1000 == 0) 
+      cat(sprintf("Connected %s of %s pixels\n", sum(connected_us), 
+                  length(connected_us)))
+    uscount <<- uscount + 1
+    # Recurse upstream
+    nbrs <- stream_neighbors(ind, nn = 2, which = "up")
+    nbrs <- nbrs[!connected_us[nbrs]]
+    for (neighbor in nbrs) {
+      connect_upstream(neighbor)
+    }
+  }  
+  
+  # Do the recursion
+  for (index in startinds_dn) {
+    connect_downstream(index)
+  }
+  message("Downstream connection complete")
+  for (index in startinds_up) {
+    connect_upstream(index)
+  }
+  message("Upstream connection complete")
+  
+  out <- data.frame(up = connected_us, dn = connected_ds, 
+                    connected = (connected_us & connected_ds))
+  out
+}
+
+con1 <- connect1(pcdf)
+# con1 <- connect1(testdf %>% filter(node_index %in% 210:250))
+sum(con1$connected)
+```
+
+Now an iterative version. 
+
+```{r}
+connect2 <- function(pcdf) {
+  rangeinds <- pcdf$range_index
+  aziminds <- pcdf$azimuth_index
+  seglabs <- pcdf$segmentation_label
+  reachinds <- pcdf$reach_index
+  nodeinds <- pcdf$node_index
+  pixcinds <- pcdf$pixc_index
+  
+  # modify along_reach to continue across reach boundaries and coerce 
+  # downstream-ness across node boundaries
+  along_split <- split(pcdf$along_reach, reachinds)
+  along_rezero <- map(along_split, function(x) x - min(x))
+  shifts <- c(0, map_dbl(along_rezero, max))[1:length(along_split)] %>% 
+    cumsum()
+  along <- map2(along_rezero, shifts, function(x, y) x + y) %>% 
+    unsplit(reachinds)
+
+  # Find indices of up/downstream neighbors for a given index
+  stream_neighbors <- function(index, nn = 2, which = c("up", "down")) {
+    which <- match.arg(which)
+    this_range <- rangeinds[index]
+    this_azimuth <- aziminds[index]
+    this_along <- along[index]
+    neighbormask <- (rangeinds %in% (this_range + -nn:nn)) & 
+                    (aziminds %in% (this_azimuth + -nn:nn))
+    us_submask <- along[neighbormask] <= this_along
+    if (which == "down") us_submask <- !us_submask
+    neighbormask[neighbormask] <- us_submask
+    out <- which(neighbormask)
+    out
+  }
+  
+  # Initialize connectivity vectors to prep for recursion
+  connected_ds <- rep(FALSE, length(rangeinds))
+  connected_us <- rep(FALSE, length(rangeinds))
+  uscount <- 1
+  dscount <- 1
+  
+  startinds_up <- which(pcdf$node_index == max(pcdf$node_index))
+  startinds_dn <- which(pcdf$node_index == min(pcdf$node_index))
+
+  options(expressions = 100000)
+  
+  current_inds <- startinds_dn
+  count1 <- 1
+  while (length(current_inds)) {
+    nbrs <- current_inds %>% 
+      map(stream_neighbors, nn = 2, which = "down") %>% 
+      unlist() %>% 
+      unique() %>% 
+      setdiff(y = current_inds)
+    connected_ds[nbrs] <- TRUE
+    current_inds <- nbrs
+    count1 <- count1 + 1
+    if ((count1 %% 100) == 0) return()
+  }
+
+  message("Downstream connection complete")
+
+  current_inds <- startinds_up
+  
+  count1 <- 1
+  while (length(current_inds)) {
+    nbrs <- current_inds %>% 
+      lapply(stream_neighbors, nn = 2, which = "up") %>% 
+      unlist() %>% 
+      unique() %>% 
+      setdiff(y = current_inds)
+    connected_us[nbrs] <- TRUE
+    current_inds <- nbrs
+    count1 <- count1 + 1
+    if ((count1 %% 1000) == 0) cat(count1, "\n")
+  }
+  message("Upstream connection complete")
+  
+  out <- data.frame(up = connected_us, dn = connected_ds, 
+                    connected = (connected_us & connected_ds))
+  out
+}
+
+
+con2 <- connect2(pcdf)
+```
+
+```{r}
+library(profvis)
+profvis(connect2(pcdf))
+```
+
+Can I vectorize stream_neighbors?
+
+```{r}
+  stream_neighbors <- function(index, nn = 2, which = c("up", "down")) {
+    which <- match.arg(which)
+    this_range <- rangeinds[index]
+    this_azimuth <- aziminds[index]
+    this_along <- along[index]
+    neighbormask <- (rangeinds %in% (this_range + -nn:nn)) & 
+                    (aziminds %in% (this_azimuth + -nn:nn))
+    us_submask <- along[neighbormask] <= this_along
+    if (which == "down") us_submask <- !us_submask
+    neighbormask[neighbormask] <- us_submask
+    out <- which(neighbormask)
+    out
+  }
+
+  # Find indices of up/downstream neighbors for a given indices
+  stream_neighbors_vec <- function(indices, nn = 2, which = c("up", "down")) {
+    which <- match.arg(which)
+    this_range <- rangeinds[indices]
+    this_azimuth <- aziminds[indices]
+    
+    for (index in indices) {
+      
+    }
+    this_along <- along[indices]
+    neighbormask <- (rangeinds %in% (this_range + -nn:nn)) & 
+                    (aziminds %in% (this_azimuth + -nn:nn))
+    us_submask <- along[neighbormask] <= this_along
+    if (which == "down") us_submask <- !us_submask
+    neighbormask[neighbormask] <- us_submask
+    out <- which(neighbormask)
+    out
+  }
+
+
+```
+
+
+I have another idea.
+
+```{r}
+connect3 <- function(pcdf) {
+  rangeinds <- pcdf$range_index
+  aziminds <- pcdf$azimuth_index
+  seglabs <- pcdf$segmentation_label
+  reachinds <- pcdf$reach_index
+  nodeinds <- pcdf$node_index
+  pixcinds <- pcdf$pixc_index
+  
+  # modify along_reach to continue across reach boundaries and coerce 
+  # downstream-ness across node boundaries
+  along_split <- split(pcdf$along_reach, reachinds)
+  along_rezero <- map(along_split, function(x) x - min(x))
+  shifts <- c(0, map_dbl(along_rezero, max))[1:length(along_split)] %>% 
+    cumsum()
+  along <- map2(along_rezero, shifts, function(x, y) x + y) %>% 
+    unsplit(reachinds)
+
+  # Find indices of up/downstream neighbors for a given index
+  stream_neighbors <- function(index, nn = 2, which = c("up", "down")) {
+    which <- match.arg(which)
+    this_range <- rangeinds[index]
+    this_azimuth <- aziminds[index]
+    this_along <- along[index]
+    neighbormask <- (rangeinds %in% (this_range + -nn:nn)) & 
+                    (aziminds %in% (this_azimuth + -nn:nn))
+    us_submask <- along[neighbormask] <= this_along
+    if (which == "down") us_submask <- !us_submask
+    neighbormask[neighbormask] <- us_submask
+    out <- which(neighbormask)
+    out
+  }
+  
+  # Initialize connectivity vectors to prep for recursion
+  connected_ds <- rep(FALSE, length(rangeinds))
+  connected_us <- rep(FALSE, length(rangeinds))
+  uscount <- 1
+  dscount <- 1
+  
+  startinds_up <- which(pcdf$node_index == max(pcdf$node_index))
+  startinds_dn <- which(pcdf$node_index == min(pcdf$node_index))
+
+  connect_downstream <- function(inds) {
+
+    # Start collection of neighbors. Track start index, end index
+    nbrs <- inds
+    nbr_start <- 2
+    nbr_end <- 2
+    
+    connected_ds[inds[2:(inds[1] + 1)]] <<- TRUE
+    # connected_ds[inds[2:(inds[1] + 1)]] <- TRUE # for debugging
+    
+    for (indind in 1:inds[1]) {
+      ind <- inds[indind + 1] # account for first index being length
+
+      newnbrs <- setdiff(stream_neighbors(ind, nn = 2, which = "down"),
+                         c(nbrs[nbr_start:nbr_end], which(connected_ds)))
+      if (!length(newnbrs)) next
+      new_nbr_end <- nbr_end + length(newnbrs)
+      nbrs[nbr_end:new_nbr_end] <- newnbrs
+      nbr_end <- new_nbr_end + 1
+      indind <- indind + 1 # for debugging
+    }
+    nbrs[1] <- nbr_end - 1
+    nbrs
+  }
+  connect_upstream <- function(ind) {
+    if (connected_us[ind]) return() #|| !segmask[ind]) return()
+    connected_us[ind] <<- TRUE
+    if (uscount %% 1000 == 0) 
+      cat(sprintf("Connected %s of %s pixels\n", sum(connected_us), 
+                  length(connected_us)))
+    uscount <<- uscount + 1
+    # Recurse upstream
+    nbrs <- stream_neighbors(ind, nn = 2, which = "up")
+    nbrs <- nbrs[!connected_us[nbrs]]
+    nbrs
+  }  
+  
+  # Do the recursion
+  inds_dn <- c(length(startinds_dn), startinds_dn)
+  # while(ninds_dn > 0) {
+  for (i in 1:3) {
+    ninds_dn <- inds_dn[1] # hack to make the first index the number of current inds
+    print(inds_dn[2:(ninds_dn + 1)])
+    # cat("\n")
+    inds_dn <- connect_downstream(inds_dn)
+  }
+  return(connected_ds)
+  
+  for (index in startinds_dn) {
+    connect_downstream(index)
+  }
+  message("Downstream connection complete")
+  for (index in startinds_up) {
+    connect_upstream(index)
+  }
+  message("Upstream connection complete")
+  
+  out <- data.frame(up = connected_us, dn = connected_ds, 
+                    connected = (connected_us & connected_ds))
+  out
+}
+
+con3 <- connect3(pcdf)
+```
+
+need to vectorize connect_downstream, etc. 
+
+Stripping down and making modular
+
+```{r}
+connect4 <- function(pcdf) {
+  rangeinds <- as.numeric(pcdf$range_index)
+  aziminds <- as.numeric(pcdf$azimuth_index)
+  # seglabs <- pcdf$segmentation_label
+  reachinds <- as.numeric(pcdf$reach_index)
+  nodeinds <- as.numeric(pcdf$node_index)
+  pixcinds <- as.numeric(pcdf$pixc_index)
+  
+  # modify along_reach to continue across reach boundaries and coerce 
+  # downstream-ness across node boundaries
+  along_split <- split(pcdf$along_reach, reachinds)
+  along_rezero <- map(along_split, function(x) x - min(x))
+  shifts <- c(0, map_dbl(along_rezero, max))[1:length(along_split)] %>% 
+    cumsum()
+  along <- map2(along_rezero, shifts, function(x, y) x + y) %>% 
+    unsplit(reachinds)
+  
+
+  # Lookup table for range-azimuth combos
+  ra_table <- rangeinds * 1e5 + aziminds
+  match_range_azim <- function(r_inds, a_inds) {
+    # tomatch <- outer(r_inds * 1e5, a_inds, "+")
+    tomatch <- rep(r_inds * 1e5, length(a_inds)) + 
+               rep(a_inds, each = length(r_inds))
+    
+    out <- fmatch(tomatch, ra_table)
+    out[!is.na(out)]
+  }
+  
+  # Find indices of up/downstream neighbors for a given index
+  dnstream_neighbors <- function(index, nn = 2) {
+    this_range <- rangeinds[index]
+    this_azimuth <- aziminds[index]
+    this_along <- along[index]
+    neighborinds <- match_range_azim(this_range + -nn:nn, 
+                                     this_azimuth + -nn:nn)
+    ds_inds <- neighborinds[along[neighborinds] > this_along]
+    ds_inds
+  }
+  
+  upstream_neighbors <- function(index, nn = 2L) {
+    this_range <- rangeinds[index]
+    this_azimuth <- aziminds[index]
+    this_along <- along[index]
+    neighborinds <- match_range_azim(this_range + -nn:nn, 
+                                     this_azimuth + -nn:nn)
+    us_inds <- neighborinds[along[neighborinds] < this_along]
+    us_inds
+  }
+  
+  # Initialize connectivity vectors to prep for recursion
+  connected_ds <- rep(FALSE, length(rangeinds))
+  connected_us <- rep(FALSE, length(rangeinds))
+  uscount <- 1
+  dscount <- 1
+  
+  startinds_up <- which(pcdf$node_index == max(pcdf$node_index))
+  startinds_dn <- which(pcdf$node_index == min(pcdf$node_index))
+
+  advance_front_ds <- function(front) {
+    new_front <- numeric(length(front) * 10L)
+    starti <- 1
+    for (index in front) {
+      new_nbrs <- dnstream_neighbors(index, nn = nn)
+      if (!(n_new_nbrs <- length(new_nbrs))) next
+      endi <- starti + n_new_nbrs - 1
+      new_front[starti:endi] <- new_nbrs
+      starti <- endi + 1
+    }
+    setdiff(new_front[1:endi], front)
+  }
+  
+  advance_front_us <- function(front) {
+    new_front <- numeric(length(front) * 10L)
+    starti <- 1
+    for (index in front) {
+      new_nbrs <- upstream_neighbors(index, nn = nn)
+      if (!(n_new_nbrs <- length(new_nbrs))) next
+      endi <- starti + n_new_nbrs - 1
+      new_front[starti:endi] <- new_nbrs
+      starti <- endi + 1
+    }
+    setdiff(new_front[1:endi], front)
+  }
+  
+  # Do the iteration
+  front_ds <- startinds_dn
+  connected_ds[startinds_dn] <- TRUE
+  count_ds <- 1
+  while(length(front_ds)) {
+  # for (i in 1:300) {
+    front_ds <- advance_front_ds(front_ds)
+    connected_ds[front_ds] <- TRUE
+    count_ds <- count_ds + 1
+    if (count_ds %% 100 == 0) cat(sum(connected_ds))
+  }
+
+  message("Downstream connection complete")
+
+  front_us <- startinds_up
+  connected_us[startinds_up] <- TRUE
+  count_us <- 1
+  while(length(front_us)) {
+  # for (i in 1:3) {
+    front_us <- advance_front_us(front_us)
+    connected_us[front_us] <- TRUE
+    count_us <- count_us + 1
+    if (count_us %% 100 == 0) cat(sum(connected_us))
+  }
+  message("Upstream connection complete")
+  
+  out <- data.frame(up = connected_us, dn = connected_ds, 
+                    connected = (connected_us & connected_ds))
+  out
+}
+
+con4 <- connect4(testdf)
+profvis(connect4(testdf))
 ```
 
