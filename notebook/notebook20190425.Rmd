@@ -22,6 +22,25 @@ Now showing conditions--what I had before and what I have now.
 Viewing geometry
 
 ```{r}
+library(ggmap)
+allat <- c(passmapdf$latitude, nodemapdf$latitude)
+allon <- c(passmapdf$longitude, nodemapdf$longitude)
+bbox <- c(min(allon), min(allat), max(allon), max(allat))
+
+bgmap <- get_map(location = bbox, maptype = "terrain")
+osmap <- get_map(location = bbox, source = "osm")
+
+
+ggmap(bgmap)
+ggmap(osmap, darken = c(0.5, "white")) +
+    # ggplot(aes()) + 
+  geom_line(aes(x = longitude, y = latitude,
+                group = as.factor(pass),
+                linetype = as.factor(pass)),
+            data = passmapdf) + 
+  geom_point(aes(x = longitude, y = latitude, color = n), 
+             data = nodemapdf) +
+  scale_color_viridis_c()
 
 ```
 
