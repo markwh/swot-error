@@ -1,0 +1,34 @@
+---
+title: "Connectivity algorithm"
+author: "Mark Hagemann"
+date: "4/26/2019"
+output: ioslides_presentation
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+## Idea
+
+1. Downstream pass
+    - Start at upstream-most node
+    - connect all pixels that can be connected by moving +/- 90 degrees of downstream
+    - Stop when no more downstream pixels remain
+2. Upstream pass
+    - Start at downstream-most node
+    - connect all pixels that can be connected by moving +/- 90 degrees of downstream
+    - Stop when no more downstream pixels remain
+3. Conneted pixels are those that both passes connect
+
+
+## Details
+
+- Use modified along_reach distance from pixcvec
+- Search 2 nearest neighbors in range/azimuth grid
+    - Include down/upstream neighbors, discard others
+- No longer recursive, much faster (~4 seconds for 68k pixels)
+
+## Demo: downstream
+
+## Demo: upstream

@@ -1,0 +1,106 @@
+---
+title: "Research Update"
+author: "Mark Hagemann"
+date: "4/25/2019"
+output: 
+  ioslides_presentation:
+    incremental: true
+---
+
+```{r setup, include=FALSE}
+
+library(knitr)
+opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+opts_knit$set(root.dir = "~/Documents/swot-error")
+```
+
+```{r}
+library(ProjectTemplate)
+load.project()
+source(".Rprofile")
+
+theme_set(theme_bw())
+```
+
+
+## Objective
+
+- Show that simulated measurement errors are distributed as predicted
+
+```{r}
+gg1 <- rt_valdata(rodir(14)) %>% 
+  rt_val_hist(scale = TRUE, curve = TRUE, vars = c("height", "width"))
+
+gg1$layers[[2]]$aes_params$size <- 1
+
+gg1
+```
+
+## Updates
+
+- New simulation and validation data (thanks Rui!)
+- New conditions validated
+- New algorithm to remove problematic pixels
+
+
+## 2 new satellite passes
+
+
+```{r}
+include_graphics("fig/3pass_map.jpg", dpi = 350)
+```
+
+
+## Wider range of cross-track distances
+
+```{r}
+include_graphics("fig/xtrk_hist.png", dpi = 300)
+```
+
+
+## Wider range of pixels per node
+
+```{r}
+include_graphics("fig/npix_hist.png", dpi = 300)
+```
+
+## New flow conditions
+
+```{r}
+include_graphics("fig/ecdf3.png")
+```
+
+## Raw errors by x-track location
+
+```{r}
+include_graphics("fig/err_xtrk.png", dpi = 300)
+```
+
+## Scaled errors by x-track location
+
+```{r}
+include_graphics("fig/stderr_xtrk.png", dpi = 300)
+```
+
+## Raw errors by number of pixels
+
+```{r}
+include_graphics("fig/err_pix.png", dpi = 300)
+```
+
+## Scaled errors by number of pixels
+
+```{r}
+include_graphics("fig/stderr_pix.png", dpi = 300)
+```
+
+
+## Algorithm to remove sloughs
+
+![](~/Documents/swot-error/fig/downstream.mp4)
+
+
+
+##
+
+
