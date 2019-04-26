@@ -33,7 +33,7 @@ glimpse(runinfo)
 
 
 ```{r}
-valdf_master <- bind_rows(valdfs, .id = "outno") %>% 
+valdf_master <- bind_rows(valdfs[-1:-12], .id = "outno") %>% 
   mutate(outno = as.numeric(outno)) %>% 
   left_join(runinfo, by = "outno")
 
@@ -46,13 +46,41 @@ glimpse(valdf_master)
 ```{r}
 valdf_master %>% 
   filter(variable == "height") %>% 
-  mutate(relerr = pixc_err / sigma_est) %>% 
-  # sample_n(5000) %>% 
-  ggplot(aes(x = xtrk_dist, color = as.factor(pass))) + 
-  # geom_point(aes(y = pixc_err^2))
-  # geom_point(aes(y = sigma_est^2))
-  geom_point(aes(y = relerr), alpha = 0.3)
+  mutate(relerr = pixc_err / sigma_est,
+         pass = as.factor(pass)) %>% 
+  ggplot(aes(x = xtrk_dist, color = pass)) + 
+  
+  # geom_point(aes(y = pixc_err)) + ggtitle("Empirical height error")
+  # ggsave("../fig/err_xtrk.png")
+
+
+  # geom_point(aes(y = sigma_est)) + ggtitle("Estimated height uncertainty")
+  # ggsave("../fig/unc_xtrk.png")
+
+  geom_point(aes(y = relerr)) + ggtitle("Scaled height error")
+  ggsave("../fig/stderr_xtrk.png")
+
 ```
+
+```{r}
+valdf_master %>% 
+  filter(variable == "height") %>% 
+  mutate(relerr = pixc_err / sigma_est, 
+         pass = as.factor(pass)) %>% 
+  # sample_n(5000) %>% 
+  ggplot(aes(x = n_good_pix, color = pass)) + 
+  
+  geom_point(aes(y = sigma_est)) + ggtitle("Estimated height uncertainty")
+  ggsave("../fig/unc_pix.png")
+
+  # geom_point(aes(y = pixc_err)) + ggtitle("Empirical height error")
+  # ggsave("../fig/err_pix.png")
+
+  # geom_point(aes(y = relerr)) + ggtitle("Scaled height error")
+  # ggsave("../fig/stderr_pix.png")
+
+```
+
 
 ```{r}
 valdf_master %>% 
@@ -108,11 +136,11 @@ passmapdf <- paste0(valdirs, "/pixel_cloud.nc") %>%
 Nodes map colored by number of runs observing. For this I will need the prior db. But I can get the other info pretty easily
 
 ```{r}
-ncloc <- path("D:/data/SWOT-prior/PriorDistributionFolder/netcdfV4/", "NA07.nc")
-# ncloc <- "~/Documents/swot-error/data/priordb_update/Sac_sample_db14.nc"
+# ncloc <- path("D:/data/SWOT-prior/PriorDistributionFolder/netcdfV4/", "NA07.nc")
+ncloc <- "~/Documents/swot-error/data/priordb-update/Sac_sample_db14.nc"
 priornc <- nc_open(ncloc)
-nc_close(priornc)
 ncnodeids <- ncvar_get(priornc, "nodes/node_id") %>% as.vector()
+nc_close(priornc)
 length(ncnodeids)
 
 nodecov <- valdf_master %>% 
@@ -155,52 +183,65 @@ passmapdf %>%
 
 Put a background map on it. 
 
-```{r}
-library(ggmap)
-allat <- c(passmapdf$latitude, nodemapdf$latitude)
-allon <- c(passmapdf$longitude, nodemapdf$longitude)
-bbox <- c(min(allon), min(allat), max(allon), max(allat))
+```{r, fig.width = 8}
+# library(ggmap)
+# allat <- c(passmapdf$latitude, nodemapdf$latitude)
+# allon <- c(passmapdf$longitude, nodemapdf$longitude)
+# bbox <- c(min(allon), min(allat), max(allon), max(allat))
 
-bgmap <- get_map(location = bbox, maptype = "terrain")
-osmap <- get_map(location = bbox, source = "osm")
+# bgmap <- get_map(location = bbox, maptype = "terrain")
+# osmap <- get_map(location = bbox, source = "osm")
 
 
-ggmap(bgmap)
-ggmap(osmap, darken = c(0.5, "white")) +
+# ggmap(bgmap)
+
+ggm3 <- ggmap(bgmap, darken = c(0.2, "white")) +
     # ggplot(aes()) + 
   geom_line(aes(x = longitude, y = latitude,
                 group = as.factor(pass),
-                linetype = as.factor(pass)),
-            data = passmapdf) + 
+                linetype = pass),
+            data = mutate(passmapdf, pass = as.factor(pass)),
+            size = 1) + 
   geom_point(aes(x = longitude, y = latitude, color = n), 
              data = nodemapdf) +
   scale_color_viridis_c()
+ggm3
 
+ggsave(ggm3, filename = "../fig/3pass_map.jpg", dpi = 300)
 
 ```
 
 ### Histograms of npix, xtrack
 
 ```{r}
-glimpse(valdf_master)
+# glimpse(valdf_master)
 
-valdf_master %>% 
+ggnpxhist <- valdf_master %>% 
   filter(variable == "latitude") %>% 
-  ggplot(aes(x = n_good_pix, fill = as.factor(pass))) +
+  mutate(pass = as.factor(pass)) %>% 
+  ggplot(aes(x = n_good_pix, fill = pass)) +
   geom_histogram()
+
+ggsave(ggnpxhist, filename = "../fig/npix_hist.png", width = 6, height = 4)
+
 ```
 
 ```{r}
-valdf_master %>% 
+ggxtkhist <- valdf_master %>% 
   filter(variable == "latitude") %>% 
-  ggplot(aes(x = xtrk_dist, fill = as.factor(pass))) +
+  mutate(pass = as.factor(pass)) %>% 
+  ggplot(aes(x = xtrk_dist, fill = pass)) +
   geom_histogram()
+
+ggsave(ggxtkhist, filename = "../fig/xtrk_hist.png", width = 6, height = 4)
+
 ```
 
 
 Now flow condition
 
 ```{r}
+library(lubridate)
 flowdf <- read.csv("../data/sac_flow.csv", stringsAsFactors = FALSE) %>% 
   transmute(date = lubridate::ymd_hm(DATE.TIME, tz = "America/Los_Angeles"),
             date = as.Date(date),
@@ -210,12 +251,36 @@ cdffun <- ecdf(na.omit(flowdf$flow))
 flowdf$qtl <- cdffun(flowdf$flow)
 
 rundates <- ymd(sprintf("2009%04d", runinfo$day))
+rundatedf <- data.frame(date = rundates, day = as.factor(runinfo$day))
 
-flowdf %>% 
-  right_join(filter(date %in% rundates))
+glimpse(flowdf)
+
+cdfdf <- data.frame(
+  flow = exp(seq(log(1000), log(max(flowdf$flow, na.rm = TRUE)), 
+                 length.out = 200))
+) %>% 
+  mutate(cdf = cdffun(flow))
+
+flowdf$cdf <- cdffun(flowdf$flow)
+
+flowdf_plot <- flowdf %>% 
+  filter(date %in% rundates) %>% 
+  left_join(rundatedf, by = "date")
+
+gg_ecdf3 <- cdfdf %>% 
+  ggplot(aes(x = flow, y = cdf)) + 
+  geom_line() + 
+  geom_point(aes(color = day), data = flowdf_plot, size = 3) +
+  scale_x_log10() +
+  annotation_logticks()
+
+ggsave(gg_ecdf3, width = 5, height = 4, dpi = 250, filename = "../fig/ecdf3.png")
 
 
 ```
+
+
+
 
 ## More work on connectivity algorithm. 
 
@@ -675,6 +740,8 @@ connect4 <- function(pcdf) {
   message("Downstream connection complete")
 
   front_us <- startinds_up
+  frontno_us <- integer(length(connected_us)) # Track which front each pixel belongs to
+  frontno_us[front_us] <- 1L # Track which front each pixel belongs to
   connected_us[startinds_up] <- TRUE
   count_us <- 1
   while(length(front_us)) {
@@ -682,6 +749,7 @@ connect4 <- function(pcdf) {
     front_us <- advance_front_us(front_us)
     connected_us[front_us] <- TRUE
     count_us <- count_us + 1
+    frontno_us[front_us] <- count_us
     if (count_us %% 100 == 0) {
         cat(sum(connected_us), length(front_us), "\n")
     }
@@ -691,7 +759,7 @@ connect4 <- function(pcdf) {
   out <- data.frame(up = connected_us, dn = connected_ds, 
                     connected = (connected_us & connected_ds),
                     along = along,
-                    # frontno_up = frontno_up, 
+                    frontno_us = frontno_us,
                     frontno_ds = frontno_ds)
   out
 }
@@ -710,13 +778,14 @@ mapdf <- testdf %>%
   cbind(con4) %>% 
   mutate(con_no = as.factor(up * 2 + dn), radius = sqrt(pixel_area / pi)) %>% 
   select(latitude, longitude, con_no, node_index, reach_index, pixc_index, 
-         radius, along, frontno_ds) %>% 
+         radius, along, frontno_ds, frontno_us) %>% 
   filter(reach_index == 5) %>% 
   # sample_n(10000) %>% 
   glimpse()
 
 
-conpal <- colorFactor("Set1", domain = mapdf$con_no)
+conpal <- colorFactor(palette = c("black", "green", "cyan", "purple"), 
+                      domain = mapdf$con_no)
 
 leaflet(mapdf) %>% 
   addTiles() %>% 
@@ -734,16 +803,50 @@ Animate a map
 ```{r}
 library(gganimate)
 
-gg4 <- ggplot(mapdf, aes(y = longitude, x = latitude)) +
+gg4 <- ggplot(select(mapdf, -frontno_ds), aes(y = longitude, x = latitude)) +
   geom_point(size = 0.2) +
-  geom_point(size = 0.2, aes(group = frontno_ds), 
+  geom_point(size = 0.1, aes(group = frontno_ds),
+             color = "green",
+             alpha = 1,
+             # alpha = 0.1,
              data = filter(mapdf, frontno_ds > 1)) +
   # coord_map()
   coord_equal()
   # coord_flip()
 gg4
 
-gg4 + transition_time(frontno_ds) +
-  shadow_mark()
+gganim4 <- gg4 + transition_time(frontno_ds) +
+  shadow_mark(alpha = 0.1)
+
+
+```
+
+Now the opposite direction.
+
+```{r}
+gg5 <- ggplot(select(mapdf, -frontno_us), aes(y = longitude, x = latitude)) +
+  geom_point(size = 0.2) +
+  geom_point(size = 0.1, aes(group = frontno_us),
+             color = "cyan",
+             alpha = 1,
+             # alpha = 0.1,
+             data = filter(mapdf, frontno_us > 1)) +
+  # coord_map()
+  coord_equal()
+  # coord_flip()
+gg5
+
+gganim5 <- gg5 + transition_time(frontno_us) +
+  shadow_mark(alpha = 0.1)
+```
+
+```{r}
+
+animate(gganim4, duration = 12, renderer = av_renderer(file = "../fig/downstream.mp4"), 
+        width = 600, height = 250)
+
+animate(gganim5, duration = 12, renderer = av_renderer(file = "../fig/upstream.mp4"), 
+        width = 600, height = 250)
+
 ```
 
