@@ -109,6 +109,7 @@ Nodes map colored by number of runs observing. For this I will need the prior db
 
 ```{r}
 ncloc <- path("D:/data/SWOT-prior/PriorDistributionFolder/netcdfV4/", "NA07.nc")
+# ncloc <- "~/Documents/swot-error/data/priordb_update/Sac_sample_db14.nc"
 priornc <- nc_open(ncloc)
 nc_close(priornc)
 ncnodeids <- ncvar_get(priornc, "nodes/node_id") %>% as.vector()

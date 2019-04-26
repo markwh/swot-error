@@ -1,0 +1,30 @@
+---
+title: "notebook20190425"
+author: "Mark Hagemann"
+date: "4/25/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+I did most of my work today in yesterday's notebook, building and improving the connectivity algorithm. Now I want to prep figures to go into slides for a couple of presentations tomorrow. 
+
+```{r}
+rt_valdata(rodir(14)) %>% 
+  rt_val_hist(scale = TRUE, curve = TRUE, vars = c("height", "width"))
+  
+```
+
+Now showing conditions--what I had before and what I have now. 
+
+Viewing geometry
+
+```{r}
+
+```
+
+
+
+
