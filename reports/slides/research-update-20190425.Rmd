@@ -95,12 +95,5 @@ include_graphics("fig/stderr_pix.png", dpi = 300)
 ```
 
 
-## Algorithm to remove sloughs
-
-![](~/Documents/swot-error/fig/downstream.mp4)
-
-
-
-##
 
 

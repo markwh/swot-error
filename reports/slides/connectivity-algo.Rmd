@@ -13,12 +13,12 @@ knitr::opts_chunk$set(echo = FALSE)
 
 1. Downstream pass
     - Start at upstream-most node
-    - connect all pixels that can be connected by moving +/- 90 degrees of downstream
+    - connect all pixels that can be connected by moving downstream
     - Stop when no more downstream pixels remain
 2. Upstream pass
     - Start at downstream-most node
-    - connect all pixels that can be connected by moving +/- 90 degrees of downstream
-    - Stop when no more downstream pixels remain
+    - connect all pixels that can be connected by moving upstream
+    - Stop when no more upstream pixels remain
 3. Conneted pixels are those that both passes connect
 
 
@@ -29,6 +29,3 @@ knitr::opts_chunk$set(echo = FALSE)
     - Include down/upstream neighbors, discard others
 - No longer recursive, much faster (~4 seconds for 68k pixels)
 
-## Demo: downstream
-
-## Demo: upstream
