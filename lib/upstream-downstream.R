@@ -1,5 +1,23 @@
 # Moving water algorithm. 
 
+library(fastmatch)
+
+#' modify along_reach to continue across reach boundaries and coerce 
+#'  downstream-ness across node boundaries
+#'  
+#'  @export
+
+adjust_along <- function(alongvals, nodeinds) {
+  along_split <- split(alongvals, nodeinds)
+  along_rezero <- map(along_split, function(x) x - min(x))
+  shifts <- c(0, map_dbl(along_rezero, max))[1:length(along_split)] %>% 
+    cumsum()
+  along <- map2(along_rezero, shifts, function(x, y) x + y) %>% 
+    unsplit(nodeinds)
+  along
+}
+
+
 #' Upstream-downstream algorithm
 #' 
 #' @param pcdf As returned by \code{pixcvec_read} or \code{join_pixc}
@@ -13,15 +31,7 @@ us_ds <- function(pcdf, verbose = FALSE) {
   nodeinds <- as.numeric(pcdf$node_index)
   pixcinds <- as.numeric(pcdf$pixc_index)
   
-  # modify along_reach to continue across reach boundaries and coerce 
-  # downstream-ness across node boundaries
-  along_split <- split(pcdf$along_reach, nodeinds)
-  along_rezero <- map(along_split, function(x) x - min(x))
-  shifts <- c(0, map_dbl(along_rezero, max))[1:length(along_split)] %>% 
-    cumsum()
-  along <- map2(along_rezero, shifts, function(x, y) x + y) %>% 
-    unsplit(nodeinds)
-  
+  along <- adjust_along(as.numeric(pcdf$along_reach), nodeinds)
   
   # Lookup table for range-azimuth combos
   ra_table <- rangeinds * 1e5 + aziminds
@@ -90,7 +100,7 @@ us_ds <- function(pcdf, verbose = FALSE) {
         cat(sum(connected), length(front_cur), "\n")
       }
     }
-    out <- data.frame(connected = connected, fontno = frontno)
+    out <- data.frame(connected = connected, frontno = frontno)
     out
   }
   
