@@ -17,8 +17,8 @@ In the last week I've been indulged by my boss to develop an algorithm for selec
 
 ```{r}
 testdf <- join_pixc(rodir(18)) %>% 
-  # filter(node_index %in% 300:312)
-  filter()
+  filter(node_index %in% 300:312)
+  # filter()
 rangeinds <- testdf$range_index
 aziminds <- testdf$azimuth_index
 nodeinds <- testdf$node_index
@@ -29,6 +29,10 @@ startinds_ds <- which(nodeinds == min(nodeinds))
 ```
 
 
+```{r}
+rconnect <- us_ds(testdf, verbose = TRUE)
+```
+
 
 ## Recursive, in Python
 
@@ -37,7 +41,7 @@ startinds_ds <- which(nodeinds == min(nodeinds))
 import numpy as np
 import sys
 
-# sys.setrecursionlimit(100000) # allow for adequately deep recursion
+sys.setrecursionlimit(100000) # allow for adequately deep recursion
 
 rangeinds = np.array(r.rangeinds)
 aziminds = np.array(r.aziminds)
@@ -49,10 +53,10 @@ startinds_ds = np.add(r.startinds_ds, -1)
 npix = len(rangeinds)
 
 tracker = np.zeros(npix)
-
 count = 1
 
 def connect_recursive(ind, upstream = False):
+  global count
   # print("connecting: ", ind)
   tracker[ind] = count
   count += 1
@@ -67,11 +71,7 @@ def match_range_azim(r_inds, a_inds):
   tomatch = np.add(np.tile(r_inds * 100000, len(a_inds)),
                    np.repeat(a_inds, len(r_inds)))
   lmatch = np.searchsorted(rainds, tomatch, side='left', sorter = rasorted)
-  # print(lmatch)
   rmatch = np.searchsorted(rainds, tomatch, side='right', sorter = rasorted)
-  # print(rmatch)
-  # print(len(rasorted))
-  # print(np.max(lmatch))
   out = np.append(rasorted, 0)[lmatch]
   return out[lmatch == (rmatch - 1)]
 
@@ -86,7 +86,7 @@ def stream_neighbors(index, nnbr = 2, upstream = False):
   out_inds = neighborinds[nbrmask]
   return out_inds
   
-  
+
 connected = np.zeros(npix, dtype = bool)
 connected[startinds_ds] = True
 
@@ -98,6 +98,7 @@ recurseno_ds = tracker
 print("Downstream completed")
 connected = np.zeros(npix, dtype = bool)
 count = 1
+tracker = np.zeros(npix)
 
 for index in startinds_us:
   connect_recursive(index, upstream=True)
@@ -109,6 +110,31 @@ connected = connected_ds & connected_us
 
 np.sum(connected)
 
+```
+
+Function to quckly plot what I will animate once things are ready
+
+```{r}
+noanim <- function(tracerinds, testrows = 1:nrow(testdf)) {
+  plotdf <- cbind(testdf, tracerinds)[testrows, ]
+  gg <- ggplot(plotdf) +
+    geom_point(aes(x = longitude, y = latitude, color = tracerinds),
+               size = 0.2) +
+    scale_color_viridis_c()
+  gg
+}
+```
+
+
+```{r}
+noanim(rconnect$frontno_ds, sample(1:nrow(testdf), 300)) +
+  coord_equal()
+
+noanim(py$recurseno_ds, sample(1:nrow(testdf), 300)) +
+  coord_equal()
+
+noanim(py$recurseno_ds, which(testdf$node_index < 210)) +
+  coord_equal()
 ```
 
 
