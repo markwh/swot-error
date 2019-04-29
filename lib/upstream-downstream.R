@@ -73,6 +73,7 @@ us_ds <- function(pcdf, verbose = FALSE) {
     
     # This will move the "front" of connected pixels one neighborhood distance further
     advance_front <- function(front, upstream = FALSE) {
+      if (!length(front)) return()
       new_front <- numeric(length(front) * 30L) # allocate a conservatively large new front
       starti <- 1
       for (index in front) {
@@ -82,6 +83,7 @@ us_ds <- function(pcdf, verbose = FALSE) {
         new_front[starti:endi] <- new_nbrs
         starti <- endi + 1
       }
+      if (!exists("endi")) return() # case where front has no streamwise neighbors
       setdiff(new_front[1:endi], which(connected))
     }
     
