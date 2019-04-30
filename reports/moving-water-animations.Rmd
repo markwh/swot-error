@@ -17,7 +17,8 @@ In the last week I've been indulged by my boss to develop an algorithm for selec
 
 ```{r}
 testdf <- join_pixc(rodir(18)) %>% 
-  filter(node_index %in% 300:312)
+  filter(reach_index == 6)
+  # filter(node_index %in% 300:312)
   # filter()
 rangeinds <- testdf$range_index
 aziminds <- testdf$azimuth_index
@@ -53,18 +54,20 @@ startinds_ds = np.add(r.startinds_ds, -1)
 npix = len(rangeinds)
 
 tracker = np.zeros(npix)
+lvltracker = np.zeros(npix)
 count = 1
 
-def connect_recursive(ind, upstream = False):
+def connect_recursive(ind, level, upstream = False):
   global count
   # print("connecting: ", ind)
   tracker[ind] = count
+  lvltracker[ind] = level
   count += 1
   for neighbor in stream_neighbors(ind, nnbr = 2, upstream = upstream):
     goon = ~connected[neighbor]
     connected[neighbor] = True
     if goon:
-      connect_recursive(neighbor, upstream = upstream)
+      connect_recursive(neighbor, level + 1, upstream = upstream)
   return
 
 def match_range_azim(r_inds, a_inds):
@@ -91,19 +94,23 @@ connected = np.zeros(npix, dtype = bool)
 connected[startinds_ds] = True
 
 for index in startinds_ds:
-  connect_recursive(index)
+  connect_recursive(index, 1, upstream = False)
 
 connected_ds = connected
-recurseno_ds = tracker
+callno_ds = tracker
+recurseno_ds = lvltracker
+
 print("Downstream completed")
 connected = np.zeros(npix, dtype = bool)
 count = 1
 tracker = np.zeros(npix)
+lvltracker = np.zeros(npix)
 
 for index in startinds_us:
-  connect_recursive(index, upstream=True)
+  connect_recursive(index, 1, upstream=True)
 
-recurseno_us = tracker
+callno_us = tracker
+recurseno_us = lvltracker
 connected_us = connected
 print("Upstream completed")
 connected = connected_ds & connected_us
@@ -118,7 +125,8 @@ Function to quckly plot what I will animate once things are ready
 noanim <- function(tracerinds, testrows = 1:nrow(testdf)) {
   plotdf <- cbind(testdf, tracerinds)[testrows, ]
   gg <- ggplot(plotdf) +
-    geom_point(aes(x = longitude, y = latitude, color = tracerinds),
+    geom_point(aes(x = longitude, y = latitude, color = tracerinds, 
+                   group = tracerinds),
                size = 0.2) +
     scale_color_viridis_c()
   gg
@@ -127,15 +135,36 @@ noanim <- function(tracerinds, testrows = 1:nrow(testdf)) {
 
 
 ```{r}
-noanim(rconnect$frontno_ds, sample(1:nrow(testdf), 300)) +
+rgg <- noanim(rconnect$frontno_ds, sample(1:nrow(testdf), 2000)) +
   coord_equal()
 
-noanim(py$recurseno_ds, sample(1:nrow(testdf), 300)) +
+pygg <- noanim(as.numeric(py$callno_ds), 
+               sample(1:nrow(testdf), 2000)) +
   coord_equal()
-
-noanim(py$recurseno_ds, which(testdf$node_index < 210)) +
+pygg2 <- noanim(as.numeric(py$recurseno_ds), 
+               sample(1:nrow(testdf), 2000)) +
   coord_equal()
+rgg
+pygg
+pygg2
 ```
 
+Now animate!
 
+```{r}
+library(gganimate)
+rgg <- noanim(rconnect$frontno_ds, sample(1:nrow(testdf), 2000)) +
+  coord_equal()
+
+ranim <- rgg + transition_time(tracerinds) +
+  shadow_mark()
+pyanim <- pygg + transition_time(tracerinds) +
+  shadow_mark()
+pyanim2 <- pygg2 + transition_time(tracerinds) +
+  shadow_mark()
+pyanim2
+
+
+animate(pyanim, nframes = 300, duration = 10)
+```
 
