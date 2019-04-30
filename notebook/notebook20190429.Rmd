@@ -1,0 +1,95 @@
+---
+title: "notebook20190429"
+author: "Mark Hagemann"
+date: "4/29/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+What's going on with height errors in near swath?
+
+- I need a utility function for generating validation data from multiple runs, including metadata from manifest(s)
+
+```{r}
+
+rt_valdata_multi <- function(runnos, manifest = ro_manifest(),
+                             basedir = getOption("ro_basedir")) {
+  valdfs <- purrr::map(runnos, ~rt_valdata(rodir(., manifest = manifest)),
+                       basedir = basedir) %>% 
+    setNames(runnos)
+  out <- bind_rows(valdfs, .id = "run") %>% 
+    mutate(run = as.numeric(run)) %>% 
+    left_join(manifest, by = c(run = "outno"))
+  out
+}
+  
+```
+
+
+OK! That appears to work. Move it into lib/roruns.R. DONE. 
+
+
+Now I can inspect near-swath height errors. 
+
+First, are pixc locations being appropriately distributed in the case where gdem is split into left and right swaths? Answer: yes. The pixc's are split across left and right swaths as well. 
+
+```{r}
+mfest <- ro_manifest()
+unique(mfest$pass)
+
+mfest %>% 
+  filter(pass == 264) %>%
+  group_by(indir, gdem_name, priordb) %>% 
+  summarize(n = n()) %>% 
+  ungroup() #%>% 
+  # select(-indir)
+  glimpse()
+  
+mfest %>% 
+  filter(indir == indir[1])
+
+```
+
+```{r}
+mfest %>% 
+  filter(pass == 264) %>% glimpse()
+
+```
+
+So the left swath is only there for the 10-m reference dem. OK.
+
+Start with the 10-m ref dem case, improved prior loc. That means runs 52 and 53. 
+
+```{r}
+
+# valdf264 <- rt_valdata_multi(c(52, 53))
+valdf264 <- rt_valdata_multi(c(57, 58))
+
+valdf264 %>% 
+  rt_val_scatter(variables = c("height", "height2"), 
+                 xvar = "xtrk_dist", yvar = "relerr")
+                 # xvar = "sigma_est", yvar = "relerr")
+```
+
+And the answer is... underwhelming! The 3m and 5m runs just don't hold up. Is that true in general? To answer that I'd need a massive validation data frame incorporating a lot of runs.
+
+```{r}
+ronums <- romatch(57, vary = c("day", "pass", "gdem_name", "refdem_res", "refdem")) %>% 
+  c(57, .)
+
+valdf_big <- rt_valdata_multi(ronums)
+
+valdf_big %>% 
+  filter(variable %in% c("height", "height2")) %>% 
+  mutate(relerr = pixc_err / sigma_est) %>% 
+  ggplot(aes(x = refdem_res, y = relerr, color = as.factor(pass))) +
+  geom_boxplot() +
+  facet_wrap(~variable)
+```
+
+The problem appears to be only with pass 264.
+
+Good, question answered. 

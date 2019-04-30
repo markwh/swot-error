@@ -845,8 +845,8 @@ gganim5 <- gg5 + transition_time(frontno_us) +
 animate(gganim4, duration = 12, renderer = av_renderer(file = "../fig/downstream.mp4"), 
         width = 600, height = 250)
 
-animate(gganim5, duration = 12, renderer = av_renderer(file = "../fig/upstream.mp4"), 
-        width = 600, height = 250)
+# animate(gganim5, duration = 12, renderer = av_renderer(file = "../fig/upstream.mp4"), 
+#         width = 600, height = 250)
 
 ```
 
