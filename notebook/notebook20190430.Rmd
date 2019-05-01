@@ -1,0 +1,212 @@
+---
+title: "notebook20190430"
+author: "Mark Hagemann"
+date: "4/30/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Today: build on work from 0424 notebook prepping for validation writeup, manuscript. 
+
+Need to come up with a list of runs for Rui to do. 
+
+- Is it sufficient to run gdem at 10m resolution?
+
+
+### gdem resoution investigation
+
+Remember from yesterday: the bad runs are 57 and 58. 
+
+```{r}
+ro_manifest() %>% 
+  filter(priordb == "$PRIORLOC4") %>% 
+  filter(refdem_res == "5m") %>% 
+  glimpse()
+```
+
+
+```{r}
+romatch(60, vary = "refdem_res")
+romatch(55, vary = "refdem_res")
+```
+
+```{r}
+resvaldf1 <- c(60, romatch(60, vary = "refdem_res")) %>% 
+  rt_valdata_multi() %>% 
+  transmute(node_id, refdem_res, variable, pixc_err, relerr = pixc_err / sigma_est) %>% 
+  group_by(node_id, variable) %>% 
+  mutate(meanrelerr = mean(relerr),
+         minabsrelerr = min(abs(relerr)),
+         relerr_contrast = relerr - meanrelerr,
+         relerr_adjust = abs(relerr) - minabsrelerr,
+         err_adjust = abs(pixc_err) - min(abs(pixc_err))) %>% 
+  ungroup()
+
+
+
+resvaldf1 %>%
+  filter(variable %in% c("height", "height2", "width", "area_total")) %>% 
+  ggplot(aes(x = refdem_res, y = relerr_contrast)) + 
+  geom_boxplot() +
+  facet_wrap(~variable, scales = "free_y")
+
+
+resvaldf1 %>% 
+  filter(variable %in% c("height", "height2", "width", "area_total")) %>% 
+  # filter(variable == "height") %>% 
+  ggplot(aes(sample = relerr)) + 
+  geom_qq() + 
+  # geom_qq_line() + 
+  facet_grid(variable ~ refdem_res, scales = "free_y")
+  # geom_histogram()
+
+resvaldf1 %>% 
+  filter(variable == "height") %>% 
+  ggplot(aes(x = refdem_res, y = relerr_adjust)) +
+  geom_line(aes(group = node_id), alpha = 0.5, size = 0.3) +
+  geom_violin(alpha = 0.5) +
+  # geom_line(aes(group = node_id), alpha = 0.5, size = 0.3)
+  geom_point(alpha = 0.5)
+
+resvaldf1 %>% 
+  filter(variable == "height") %>% 
+  ggplot(aes(x = refdem_res, y = relerr)) +
+  geom_line(aes(group = node_id), alpha = 0.5, size = 0.3) +
+  geom_boxplot(alpha = 0.5) +
+  # geom_line(aes(group = node_id), alpha = 0.5, size = 0.3)
+  geom_point(alpha = 0.5)
+```
+
+Here's the one to show:
+
+```{r}
+resvaldf1 %>% 
+  filter(variable %in% c("height", "height2", "width", "area_total")) %>% 
+  # filter(variable == "height") %>% 
+  ggplot(aes(sample = relerr)) + 
+  geom_qq() + 
+  # geom_qq_line() + 
+  facet_grid(variable ~ refdem_res, scales = "free_y")
+```
+
+This one's harder to explain, but I like it: 
+
+
+```{r}
+resvaldf1 %>% 
+  filter(variable %in% c("height", "height2", "width", "area_total")) %>% 
+  ggplot(aes(x = refdem_res, y = err_adjust)) +
+  geom_line(aes(group = node_id), alpha = 0.5, size = 0.3) +
+  geom_violin(alpha = 0.5) +
+  # geom_line(aes(group = node_id), alpha = 0.5, size = 0.3)
+  geom_point(alpha = 0.5) +
+  facet_wrap(~variable, scales = "free_y") + 
+  scale_y_sqrt()
+
+```
+
+Safe to say that refdem resolution doesn't matter much. Absolute difference is very small in all but a few cases. Repeat now for higher flow case. 
+
+
+```{r}
+resvaldf2 <- c(55, romatch(55, vary = "refdem_res")) %>% 
+  rt_valdata_multi() %>% 
+  transmute(node_id, refdem_res, variable, pixc_err, relerr = pixc_err / sigma_est) %>% 
+  group_by(node_id, variable) %>% 
+  mutate(meanrelerr = mean(relerr),
+         minabsrelerr = min(abs(relerr)),
+         relerr_contrast = relerr - meanrelerr,
+         relerr_adjust = abs(relerr) - minabsrelerr,
+         err_adjust = abs(pixc_err) - min(abs(pixc_err))) %>% 
+  ungroup()
+
+resvaldf2 %>% 
+  filter(variable %in% c("height", "height2", "width", "area_total")) %>% 
+  # filter(variable == "height") %>% 
+  ggplot(aes(sample = relerr)) + 
+  geom_qq() + 
+  # geom_qq_line() + 
+  facet_grid(variable ~ refdem_res, scales = "free_y")
+  # geom_histogram()
+
+resvaldf2%>% 
+  filter(variable %in% c("height", "height2", "width", "area_total")) %>% 
+  ggplot(aes(x = refdem_res, y = err_adjust)) +
+  geom_line(aes(group = node_id), alpha = 0.5, size = 0.3) +
+  geom_violin(alpha = 0.5) +
+  # geom_line(aes(group = node_id), alpha = 0.5, size = 0.3)
+  geom_point(alpha = 0.5) +
+  facet_wrap(~variable, scales = "free_y") + 
+  scale_y_sqrt()
+
+
+```
+
+Same gist. 
+
+
+So to conclude: 10-m reference dem is fine. Finalized slc simulator runs should use that. 
+
+Resume assembling plots and tables for manuscript. 
+
+
+### Manuscript prep work
+
+Now I can use romatch to get the runs I will use for validation.
+
+- I should be able to quickly scope which runs are missing in order to get the full validation grid. 
+
+```{r}
+glimpse(ro_manifest())
+
+
+varyvars <- c("pass", "day", "gdem_name")
+romatch(54, vary = varyvars)
+
+ro_manifest() %>% 
+  filter(outno %in% 51:54)
+```
+
+```{r}
+
+valdf_master <- rt_valdata_multi(51:54)
+```
+
+
+```{r}
+xtgg0 <- valdf_master %>% 
+  # filter(variable == "height") %>% 
+  filter(variable %in% c("height", "height2", "width", "area_total")) %>% 
+  mutate(relerr = pixc_err / sigma_est,
+         pass = as.factor(pass)) %>% 
+  ggplot(aes(x = xtrk_dist, color = pass)) +
+  facet_wrap(~variable, scales = "free_y")
+  
+xtgg0 + geom_point(aes(y = pixc_err)) + ggtitle("Empirical height error")
+
+xtgg0 + geom_point(aes(y = sigma_est)) + ggtitle("Estimated height uncertainty")
+
+xtgg0 + geom_point(aes(y = relerr)) + ggtitle("Scaled height error")
+```
+
+
+```{r}
+npixgg0 <- valdf_master %>% 
+  # filter(variable == "height") %>% 
+  filter(variable %in% c("height", "height2", "width", "area_total")) %>% 
+  mutate(relerr = pixc_err / sigma_est,
+         pass = as.factor(pass)) %>% 
+  ggplot(aes(x = n_good_pix, color = pass)) +
+  facet_wrap(~variable, scales = "free_y")
+  
+npixgg0 + geom_point(aes(y = pixc_err)) + ggtitle("Empirical height error")
+
+npixgg0 + geom_point(aes(y = sigma_est)) + ggtitle("Estimated height uncertainty")
+
+npixgg0 + geom_point(aes(y = relerr)) + ggtitle("Scaled height error")
+```
+
+
