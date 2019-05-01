@@ -7,7 +7,15 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+library(knitr)
+opts_knit$set(root.dir = "~/Documents/swot-error")
 ```
+
+```{r}
+library(ProjectTemplate)
+load.project()
+```
+
 
 Today: build on work from 0424 notebook prepping for validation writeup, manuscript. 
 
