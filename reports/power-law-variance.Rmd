@@ -1,0 +1,54 @@
+---
+title: "Power-law Variance"
+author: "Mark Hagemann"
+date: "5/6/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Below are some quick thoughts about mapping variance using a power-law relationship. Here I'll assume the following function relates two variables, $x$ and $y$:
+
+$$
+y = ax^b
+$$
+
+Suppose we know something about the variance of x, and we want to use thta information to make some statement about the variance of $y$. There are at least 2 ways of doing this, detailed below
+
+## Method 1: log-space variance
+
+The above equation is equivalent to 
+
+$$
+\log y = \log a + b \log x
+$$
+
+So the log-space variance is
+
+$$
+var(\log y) = b^2 var(\log x)
+$$
+
+This is true regardless of distribution. 
+
+Log-space variance can be thought of as describing the variability of $y$ relative to itself. This is because, to a first-order approximation (and in particular for $y_1$ close to $y_0$), $(y_1 - y_0) / y_0 \approx \log{y_1} - \log{y_0}$
+
+A disadvantage of this method is that it cannot be used when $y$ is not known absolutely e.g. when it represents fluctuations in river stage above an unknown depth.  
+
+## Method 2: linear space variance, assuming log-normal distribution
+
+If we assume $x$ and $y$ follow a log-normal distribution, then we can describe the linear-space variance of $y$ in terms of the mean and variance of $x$. 
+
+If $x \sim logN(\mu_x, \sigma_x)$, then $y \sim logN(\log a + b \mu_x, b \sigma_x)$. The variance of $y$ is then
+
+$$
+var(y) = [\exp(\sigma_y^2) - 1]\exp(2 \mu_y + \sigma_y^2)
+$$
+
+where $\mu_y = \log a + b \mu_x$ and $\sigma_y = b \sigma_x$. 
+
+$\mu_x$ and $\sigma_x$ can be estimated as the sample mean and standard deviation, respectively, of $\log x$ (base $e$). 
+
+This method has the advantage of allowing linear adjustment of $y$ with the same variance calculation. For example, if $y = y' - y_0$ (as in the stage with unknown depth example), then $var(y') = var(y)$. However, it relies heavily on the log-normal assumption. 
