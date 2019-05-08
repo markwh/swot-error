@@ -1,0 +1,111 @@
+---
+title: "notebook20190504"
+author: "Mark Hagemann"
+date: "5/4/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+opts_knit$set(root.dir = "~/Documents/swot-error")
+```
+
+```{r}
+library(ProjectTemplate)
+load.project()
+pixcdf <- join_pixc(rodir(18))
+```
+
+
+Today I'm making a function to do animations of pixel cloud netcdfs. Ideally this will farm out the rendering to a separate process so I don't have to wait for it. 
+
+First see if I can use `ggforce::geom_circle()` to do pixel maps as I've previously done using leaflet. 
+
+```{r, eval = FALSE}
+
+pixcdf %>% 
+  filter(node_index %in% 301:305) %>% 
+  transmute(latitude, longitude, node_index, 
+            classification = as.factor(classification), 
+            radius_m = sqrt(pixel_area / pi),
+            radx_deg = radius_m * 360 / 40075000,
+            rady_deg = radx_deg * cos(latitude * pi / 180)) %>% 
+  ggplot() +
+  geom_point(aes(x = longitude, y = latitude, color = classification), size = 1)
+  # geom_ellipse(aes(x0 = longitude, y0 = latitude, a = radx_deg, b = rady_deg,
+  #                  angle = 0, fill = classification, color = classification))
+```
+
+How bad is it to animate in leaflet?
+
+```{r}
+library(leaflet)
+library(crosstalk)
+
+copal <- colorFactor("Set1", domain = as.factor(pixcdf$classification))
+
+
+prepdf <- pixcdf %>% 
+  filter(node_index %in% 301:305) %>% 
+  transmute(latitude, longitude, node_index, pixc_index,
+            height,
+            time = illumination_time %% 10,
+            time = round(time * 1000), 
+            classification = as.factor(classification), 
+            radius_m = sqrt(pixel_area / pi),
+            radx_deg = radius_m * 360 / 40075000,
+            rady_deg = radx_deg * cos(latitude * pi / 180))
+
+pixcdf_shared <- prepdf  %>% 
+  SharedData$new()
+
+
+bscols(
+  filter_slider("time", "Time", pixcdf_shared, column = ~time, width = 250,
+              # value = ~c(min(time), min(time) + 0.01),
+              animate = animation_options(loop = TRUE)),
+  pixcdf_shared %>% 
+  leaflet() %>% 
+  addTiles() %>% 
+  addCircles(radius = ~radius_m, fillColor = ~copal(classification), stroke = FALSE,
+             fillOpacity = 0.8)
+
+)
+
+
+```
+
+I guess I conclude that the animation doesn't work outside of a shiny app. And that's really all for today. Sheesh.
+
+Let's try a different tack. Start with a plotly animation for height as a function of along-reach distance. 
+
+```{r}
+hgg <- prepdf %>% 
+  ggplot(aes(x = time, y = height, text = node_index, frame = time, group = pixc_index)) +
+  geom_point(aes(color = classification))
+hgg
+
+hggp <- ggplotly(hgg, tooltip = "text")
+
+animation_slider(hggp, transition = 0)
+
+```
+
+
+
+
+```{r, eval=FALSE}
+
+#' @param maptype Passed to \code{ggamp::get_map()}
+pixc_animate <- function(ncfile, sattrack = FALSE, pixels = TRUE,
+                         maptype = "terrain", ) {
+  if (!(pixels || sattrack)) 
+    stop("At least one of pixels or sattrack must be TRUE")
+  
+  
+  
+}
+```
+
+
