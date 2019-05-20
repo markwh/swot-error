@@ -36,3 +36,29 @@ rt_nodewise_error <- function(valdata, variable = "area_total", plot = TRUE, bre
     theme(panel.spacing = unit(2, "points"))
   out
 }
+
+
+#' Read prior database for node info
+#' 
+#' @param nodeids vector of node indices
+#' @param ncfile netcdf file containing prior info
+#' 
+#' @export
+priornode_read <- function(nodeids, ncfile) {
+  nc <- nc_open(ncfile)
+  on.exit(nc_close(nc))
+  
+  getvar <- function(var, ...) as.vector(ncvar_get(nc, var, ...))
+  ncnodeids <- getvar("nodes/node_id")
+  ncinds <- which(ncnodeids %in% nodeids)
+  outinds <- ncinds - min(ncinds) + 1
+  
+  readstart <- min(ncinds)
+  readlen <- max(ncinds) - min(ncinds) + 1
+  
+  out <- data.frame(
+    node_id = nodeids,
+    latitude = getvar("nodes/y", start = readstart, count = readlen)[outinds],
+    longitude = getvar("nodes/x", start = readstart, count = readlen)[outinds])
+  out
+}

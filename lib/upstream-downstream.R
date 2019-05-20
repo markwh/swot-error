@@ -117,9 +117,11 @@ us_ds <- function(pcdf, verbose = FALSE) {
   if (verbose) message("Upstream connection complete")
   
   # Create final data frame and return
-  out <- cbind(data.frame(connected = dsdf$connected_ds & usdf$connected_us,
-                    along = along),
-               dsdf, usdf)
+  out <- cbind(data.frame(connected = dsdf$connected_ds & 
+                                      usdf$connected_us, 
+                          along = along),
+               dsdf, usdf, 
+               pcdf[c("range_index", "azimuth_index")])
   out
 }
 

@@ -5,7 +5,7 @@
 roruns <- read.csv("src/roruns.csv", stringsAsFactors = FALSE)
 
 ro_manifest <- function(files = paste0("~/Documents/swot-error/src/",
-                                       c("roruns.csv", "roruns37.csv"))) {
+                                       c("roruns.csv", "roruns37.csv", "roruns61.csv"))) {
   runnames <- gsub("\\..+$", "", gsub("^.*(.*/)+", "", files))
   out <- purrr::map(files, ~read.csv(., stringsAsFactors = FALSE)) %>% 
     setNames(runnames) %>% 
@@ -47,9 +47,12 @@ rodir <- function(runno, manifest = ro_manifest(),
 #' Get a bound data.frame for multiple runs. 
 #' 
 rt_valdata_multi <- function(runnos, manifest = ro_manifest(),
-                             basedir = getOption("ro_basedir")) {
-  valdfs <- purrr::map(runnos, ~rt_valdata(rodir(., manifest = manifest)),
-                       basedir = basedir) %>% 
+                             basedir = getOption("ro_basedir"),
+                             group = c("nodes", "reaches")) {
+  group <- match.arg(group)
+  valdfs <- purrr::map(runnos, ~rt_valdata(rodir(., manifest = manifest,
+                                                 basedir = basedir),
+                                           group = group)) %>% 
     setNames(runnos)
   out <- bind_rows(valdfs, .id = "run") %>% 
     mutate(run = as.numeric(run)) %>% 

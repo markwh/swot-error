@@ -184,16 +184,13 @@ passmapdf %>%
 Put a background map on it. 
 
 ```{r, fig.width = 8}
-# library(ggmap)
-# allat <- c(passmapdf$latitude, nodemapdf$latitude)
-# allon <- c(passmapdf$longitude, nodemapdf$longitude)
-# bbox <- c(min(allon), min(allat), max(allon), max(allat))
-
-# bgmap <- get_map(location = bbox, maptype = "terrain")
-# osmap <- get_map(location = bbox, source = "osm")
-
-
-# ggmap(bgmap)
+library(ggmap)
+allat <- c(passmapdf$latitude, nodemapdf$latitude)
+allon <- c(passmapdf$longitude, nodemapdf$longitude)
+bbox <- c(min(allon), min(allat), max(allon), max(allat))
+bgmap <- get_map(location = bbox, maptype = "terrain")
+osmap <- get_map(location = bbox, source = "osm")
+ggmap(bgmap)
 
 ggm3 <- ggmap(bgmap, darken = c(0.2, "white")) +
     # ggplot(aes()) + 
@@ -207,7 +204,7 @@ ggm3 <- ggmap(bgmap, darken = c(0.2, "white")) +
   scale_color_viridis_c()
 ggm3
 
-ggsave(ggm3, filename = "../fig/3pass_map.jpg", dpi = 300)
+# ggsave(ggm3, filename = "../fig/3pass_map.jpg", dpi = 300)
 
 ```
 
@@ -219,8 +216,9 @@ ggsave(ggm3, filename = "../fig/3pass_map.jpg", dpi = 300)
 ggnpxhist <- valdf_master %>% 
   filter(variable == "latitude") %>% 
   mutate(pass = as.factor(pass)) %>% 
-  ggplot(aes(x = n_good_pix, fill = pass)) +
-  geom_histogram()
+  ggplot(aes(x = n_good_pix)) +
+  # geom_density(aes(color = pass))
+  geom_histogram(aes(fill = pass), color = "gray30")
 
 ggsave(ggnpxhist, filename = "../fig/npix_hist.png", width = 6, height = 4)
 

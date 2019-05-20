@@ -29,12 +29,14 @@ def get_config(file = './config/ro-config.rdf',
     if gdem:
         config['class_list'] = '[1]'
         config['use_fractional_inundation'] = '[False]'
+        config['do_improved_geolocation'] = 'False'
         config['use_segmentation'] = '[True]'
         config['use_heights'] = '[True]'
     return config
 
 def simple_rivertile(pixc_file, out_riverobs_file,
-                     out_pixc_vector_file, config, delete=False, debug=False):
+                     out_pixc_vector_file, config, delete=False, 
+                     shapedir = None, debug=False):
     """Simplified swot_pixc2rivertile funciton. 
     
     Largely copy-pasted from Alex's script. 
@@ -55,6 +57,8 @@ def simple_rivertile(pixc_file, out_riverobs_file,
                    'area_agg_method']:
             continue
         config[key] = ast.literal_eval(config[key])
+        
+    print(config)
 
     l2pixc_to_rivertile = SWOTRiver.Estimate.L2PixcToRiverTile(
         pixc_file, out_pixc_vector_file)
@@ -70,6 +74,16 @@ def simple_rivertile(pixc_file, out_riverobs_file,
         ).to_ncfile(l2pixc_to_rivertile.index_file)
 
     l2pixc_to_rivertile.rivertile_product.to_ncfile(out_riverobs_file)
+    
+    # shapefiles
+    if shapedir is not None: 
+        if not os.path.isdir(shapedir):
+            os.mkdir(shapedir)
+        l2pixc_to_rivertile.rivertile_product.nodes.write_shapes(
+            os.path.join(shapedir, 'nodes.shp'))
+        l2pixc_to_rivertile.rivertile_product.reaches.write_shapes(
+            os.path.join(shapedir, 'reaches.shp'))
+    
 
 
 def get_gdem_pixc(indir, gdem_file, gdem_dir=None, 
@@ -114,7 +128,9 @@ def rorun(outdir, indir, priordb, gdem_name, gdem_dir=None,
     out_ro_file_gdem_dil1 = outpath + '/rt_gdem_dil1.nc' # pre-seg dialation
     out_pcv_file_gdem_dil1 = outpath + '/pcv_gdem_dil1.nc' # pre-seg dilation
     out_ro_file_gdem_dil2 = outpath + '/rt_gdem_dil2.nc' # pre-seg dialation
-    out_pcv_file_gdem_dil2 = outpath + '/pcv_gdem_dil2.nc' # pre-seg dilation    
+    out_pcv_file_gdem_dil2 = outpath + '/pcv_gdem_dil2.nc' # pre-seg dilation
+    
+    
     
     config1 = get_config(priordb=priorpath, gdem=False)
     config2 = get_config(priordb=priorpath, gdem=True)
@@ -125,19 +141,20 @@ def rorun(outdir, indir, priordb, gdem_name, gdem_dir=None,
     simple_rivertile(pixc_file=pixc_file, 
                      out_riverobs_file=out_ro_file,
                      out_pixc_vector_file=out_pcv_file, 
-                     config=config1, delete=delete)
+                     config=config1, delete=delete, 
+                     shapedir=outpath + '/shapefiles')
     simple_rivertile(pixc_file=pixc_file_gdem, 
                      out_riverobs_file=out_ro_file_gdem,
                      out_pixc_vector_file=out_pcv_file_gdem, 
-                     config=config2, delete=delete)
+                     config=config2, delete=delete, shapedir=None)
     simple_rivertile(pixc_file=pixc_file_gdem, 
                      out_riverobs_file=out_ro_file_gdem_dil1,
                      out_pixc_vector_file=out_pcv_file_gdem_dil1, 
-                     config=config3, delete=delete)
+                     config=config3, delete=delete, shapedir=None)
     simple_rivertile(pixc_file=pixc_file_gdem, 
                      out_riverobs_file=out_ro_file_gdem_dil2,
                      out_pixc_vector_file=out_pcv_file_gdem_dil2, 
-                     config=config4, delete=delete)
+                     config=config4, delete=delete, shapedir=None)
 
 def check_make_fake_pixc(fake_pixc_name, gdem_name, indir, gdem_dir=None):
     if (os.path.isfile(fake_pixc_name)):

@@ -1,0 +1,233 @@
+---
+title: "notebook20190513"
+author: "Mark Hagemann"
+date: "5/13/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Today I'm redoing some riverobs runs with different things toggled on that I hadn't done before. I think I've successfully used the improved geolocation, but I don't notice any difference on the map. See what it's done different. 
+
+
+```{r}
+library(rivertile)
+
+joindf <- join_pixc("../output/sac18") %>% 
+  mutate(classification = as.factor(classification))
+
+glimpse(joindf)
+all.equal(joindf$longitude, joindf$longitude_vectorproc)
+
+diff_gg <- joindf %>% 
+  mutate(londif = abs(longitude - longitude_vectorproc),
+         latdif = abs(latitude - latitude_vectorproc)) %>% 
+  arrange(desc(londif)) %>% 
+  `[`(1:100, ) %>% 
+  ggplot(aes(x = latdif, y = londif, 
+             text = node_index)) +
+  geom_point()
+
+diff_gg
+ggplotly(diff_gg, tooltip = "text")
+
+```
+
+Look at a single node that has a big-difference pixel.
+
+```{r}
+theseinds <- 471:490
+
+joindf %>% 
+  filter(node_index %in% theseinds) %>% 
+  ggplot(aes(x = longitude, y = latitude, color = classification))+
+  geom_point()
+
+joindf %>% 
+  filter(node_index %in% theseinds) %>% 
+  ggplot(aes(x = longitude_vectorproc, y = latitude_vectorproc, 
+             color = classification))+
+  geom_point()
+
+
+```
+
+Cool, it must be a simple issue with my shiny app. 
+
+See how it affects validation. 
+
+```{r}
+nodeval1 <- rt_valdata("../output/sac18_improved")
+nodeval2 <- rt_valdata("../output/sac18")
+
+commonnodes <- intersect(nodeval1$node_id, nodeval2$node_id)
+nodeval1 <- filter(nodeval1, node_id %in% commonnodes)
+nodeval2 <- filter(nodeval2, node_id %in% commonnodes)
+```
+
+```{r}
+valvars <- c("height", "height2", "width", "area_total")
+# valvars <- c("latitude", "longitude")
+rt_val_hist(nodeval1, vars = valvars, scale = TRUE) + ggtitle("Improved geolocation")
+rt_val_hist(nodeval2, vars = valvars, scale = TRUE) + ggtitle("No Improved geolocation")
+
+rt_val_hist(nodeval1, vars = valvars, scale = FALSE) + ggtitle("Improved geolocation")
+rt_val_hist(nodeval2, vars = valvars, scale = FALSE) + ggtitle("No Improved geolocation")
+
+
+```
+
+Improved geolocation makes errors and especially scaled errors much worse. Why?
+
+- Find a node with large discrepancy 
+- plot uncorrected pixels with centroid, corrected centroid overlain
+- plot corrected pixels with centroid, uncorrected centroid overlain.
+
+```{r}
+unique(nodeval1$variable)
+plotvar <- "gdem_val"
+lalodf1 <- nodeval1 %>% 
+  filter(variable %in% c("latitude", "longitude")) %>% 
+  select(node_id, variable, !!plotvar) %>% 
+  spread(key = "variable", value = plotvar) %>% 
+  transmute(node_id, lat1 = latitude, lon1 = longitude) 
+
+lalodf2 <- nodeval2 %>% 
+  filter(variable %in% c("latitude", "longitude")) %>% 
+  select(node_id, variable, !!plotvar) %>% 
+  spread(key = "variable", value = plotvar) %>% 
+  transmute(node_id, lat2 = latitude, lon2 = longitude)
+
+lalodf <- inner_join(lalodf1, lalodf2, by = "node_id") %>% 
+  mutate(londif = lon1 - lon2, latdif = lat1 - lat2, 
+         eucdist = sqrt(londif^2 + latdif^2),
+         logeuc = log(eucdist))
+
+lalodf %>% 
+  arrange(desc(eucdist))
+
+glimpse(lalodf)
+summary(lalodf)
+
+```
+
+Hmm, geolocation is the same except for 4 nodes (update: zero nodes). The difference is with the gdem truth! Why is that different? 
+
+Node latitude and longitue may just be reflecting the prior. But why is gdem not doing the same? 
+
+Time to compare unimproved to improved directly. 
+
+```{r}
+nodedf1 <- rt_read("../output/sac18_improved/rt.nc")
+nodedf2 <- rt_read("../output/sac18/rt.nc")
+nodedf <- inner_join(nodedf1, nodedf2, by = c("node_id", "reach_id"))
+
+glimpse(nodedf)
+
+plot(height.y - height.x ~ height.x, nodedf)
+
+
+gdemdf1 <- rt_read("../output/sac18_improved/rt_gdem.nc")
+gdemdf2 <- rt_read("../output/sac18/rt_gdem.nc")
+gdemdf <- inner_join(gdemdf1, gdemdf2, by = c("node_id", "reach_id"))
+
+glimpse(gdemdf)
+
+plot(height.y - height.x ~ height.x, gdemdf)
+
+
+
+
+```
+
+
+
+Try doing it all in 1 go, using nodeval's
+
+```{r}
+nodeval <- inner_join(nodeval1, nodeval2, 
+                      by = c("reach_id", "node_id", "variable"))
+glimpse(nodeval)
+
+nodeval %>% 
+  ggplot(aes(x = gdem_val.x, y = gdem_val.y)) +
+  geom_point(aes(color = variable)) +
+  scale_x_log10() + 
+  scale_y_log10() + annotation_logticks()
+
+nodeval %>% 
+  filter(variable == "height") %>% 
+  ggplot(aes(x = gdem_val.x, y = gdem_val.y)) +
+  geom_point(aes(color = variable))
+
+list(improved = nodeval1, unimproved = nodeval2) %>% 
+  bind_rows(.id = "geoloc") %>% 
+  filter(variable == "height") %>% 
+  ggplot(aes(x = node_id, y = gdem_val)) +
+  geom_point(aes(color = geoloc))
+
+list(improved = nodeval1, unimproved = nodeval2) %>% 
+  bind_rows(.id = "geoloc") %>% 
+  filter(variable == "area_total") %>% 
+  ggplot(aes(x = node_id, y = gdem_val)) +
+  geom_point(aes(color = geoloc))
+
+
+```
+
+Track back to pixel level. 
+
+
+```{r}
+pixdf <- list(
+  improved = join_pixc("../output/sac18_improved/"), 
+                       # pixcname = "fake_pixc.nc", pcvname = "pcv_gdem.nc"),
+  unimproved = join_pixc("../output/sac18")#, 
+                       # pixcname = "fake_pixc.nc", pcvname = "pcv_gdem.nc")
+) %>% 
+  bind_rows(.id = "geoloc")
+
+pixdf %>% 
+  filter(geoloc == "improved") %>% 
+  glimpse()
+pixdf %>% 
+  filter(geoloc == "unimproved") %>% 
+  glimpse()
+
+pixdf %>% 
+  sample_n(2000) %>% 
+  ggplot(aes(x = node_index, y = height, color = geoloc)) + 
+  geom_point()
+
+pixdf %>% 
+  sample_n(2000) %>% 
+  ggplot(aes(x = longitude_vectorproc, 
+             y = height, color = geoloc)) + 
+  geom_point()
+
+pixdf %>% 
+  select(pixc_index, node_index, height, geoloc) %>% 
+  group_by(node_index, geoloc) %>% 
+  summarize(mean = mean(height)) %>% #, min = min(height), max = max(height)) %>% 
+  spread(key = geoloc, value = mean) %>% 
+  na.omit() %>% glimpse() %>% 
+  # sample_n(1000) %>% glimpse()
+  ggplot(aes(x = unimproved, y = improved)) + 
+  geom_point() + geom_abline(slope = 1, intercept = 0)
+
+pixdf %>% 
+  select(range_index, azimuth_index, node_index, height, geoloc) %>% 
+  spread(key = geoloc, value = height) %>% 
+  na.omit() %>% glimpse() %>% 
+  sample_n(1000) %>% glimpse() %>% 
+  ggplot(aes(x = unimproved, y = improved)) + 
+  geom_point() + geom_abline(slope = 1, intercept = 0)
+
+
+```
+
+So the gdem is rotten at the pixc level. These are two runs that use the same pixc as input. 
+
+Crazy, rerunning those simulations fixed it. Arrgh! Must have been a stray fake pixel cloud in the project folder. Repeat for a high-flow case. Done (via ctrl+F). Looks identical as well. 
