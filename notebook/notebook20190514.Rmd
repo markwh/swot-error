@@ -1,0 +1,162 @@
+---
+title: "notebook20190514"
+author: "Mark Hagemann"
+date: "5/14/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Yesterday I added shapefiles and improved geolocation to my riverobs run script. Today I'll try the more difficult task of putting the slough detector on-line. 
+
+
+Some parameters will (eventually) need to be sorted out. 
+
+- Search window size
+    - Start with 2 pixels for now
+- Where and how frequently to restart the upstream and downstream searches
+    - Start with up/downstream-most nodes
+- How to classify flagged pixels?
+    - Give them a class number, 9 maybe? 
+    
+    
+Best to do this in my own git branch of RiverObs. Make that now. 
+
+Workflow will be pretty janky (again, for now). 
+
+1. Run RiverObs as usual
+2. Make copies of input pixel_cloud.nc, fake_pixc.nc
+3. Run `us_ds` on pcv.nc, pcv_gdem.nc
+4. Modify copied pixel clouds (`classification[usds$connected] = 9`)
+5. Rerun RiverObs using new pixel clouds. 
+
+
+```{r}
+testpcv <- pixcvec_read("../output/sac18/pcv.nc")
+testflag1 <- us_ds(testpcv, verbose = TRUE)
+testflag2 <- us_ds(pixcvec_read("../output/sac18/pcv_gdem.nc"), verbose = TRUE)
+
+str(testflag2, 1)
+
+```
+
+Since I've already done the regular riverobs runs (and have a decent script to do so), what if I have this flagging and rerunning work assuming regular runs have been done and are stored according to my folder structuring?
+
+```{r}
+
+dir <- "../output/sac18"
+
+flagclass <- 9L
+
+flag_sloughs <- function(dir, pixcflag = 9L,
+                         gdemflag = 0L) {
+  
+  # create files to contain new classification
+  file.copy(paste0(dir, "/pixel_cloud.nc"), 
+            paste0(dir, "/pixel_cloud_flagged.nc"))
+  file.copy(paste0(dir, "/fake_pixc.nc"), 
+            paste0(dir, "/pixc_gdem_flagged.nc"))
+  
+  # connect pixels
+  message("Connecting pixel cloud")
+  pixccon <- us_ds(pixcvec_read(paste0(dir, "/pcv.nc")))
+  message("Connecting gdem pixel cloud")
+  gdemcon <- us_ds(pixcvec_read(paste0(dir, "/pcv_gdem.nc")))
+  message("Connected.")
+  
+  # Match connections to pixel cloud by range, azimuth
+  pixcnc <- nc_open(paste0(dir, "/pixel_cloud_flagged.nc"), write = TRUE)
+  # on.exit(nc_close(pixcnc))
+  
+  pixcclass <- ncvar_get(pixcnc, "pixel_cloud/classification")
+  pixcrange <- ncvar_get(pixcnc, "pixel_cloud/range_index")
+  pixcazim <- ncvar_get(pixcnc, "pixel_cloud/azimuth_index")
+  pixcrangeazim <- pixcrange * 1e6 + pixcazim
+  
+  flagrangeazim <- with(pixccon[!pixccon$connected, ], 
+                        range_index * 1e6 + azimuth_index)
+  flaginds <- match(flagrangeazim, pixcrangeazim)
+  
+  # Assign to classification
+  pixcclass[flaginds] <- pixcflag
+  ncvar_put(pixcnc, varid = "pixel_cloud/classification", pixcclass)    
+  nc_close(pixcnc)
+  
+  # Now gdem fake pixel cloud
+  gdemnc <- nc_open(paste0(dir, "/pixc_gdem_flagged.nc"), write = TRUE)
+  # on.exit(nc_close(gdemnc))
+  
+  gdemclass <- ncvar_get(gdemnc, "pixel_cloud/classification")
+  gdemrange <- ncvar_get(gdemnc, "pixel_cloud/range_index")
+  gdemazim <- ncvar_get(gdemnc, "pixel_cloud/azimuth_index")
+  gdemrangeazim <- gdemrange * 1e6 + gdemazim
+  
+  flagrangeazim <- with(gdemcon[!gdemcon$connected, ], 
+                        range_index * 1e6 + azimuth_index)
+  flaginds <- match(flagrangeazim, gdemrangeazim)
+
+  # Assign to classification
+  gdemclass[flaginds] <- gdemflag
+  ncvar_put(gdemnc, varid = "pixel_cloud/classification", gdemclass)
+  nc_close(gdemnc)
+
+}
+
+
+flag_sloughs("../output/sac18_improved")
+
+```
+
+```{r}
+join_pixc("../output/sac18_improved", pcvname = "pcv.nc", 
+          pixcname = "pixel_cloud_flagged.nc") %>% 
+  filter(reach_index == 4) %>% 
+  mutate(classification = as.factor(classification)) %>% 
+  # glimpse() %>% 
+  ggplot(aes(x = longitude_vectorproc, y = latitude_vectorproc)) + 
+  geom_point(aes(color = classification), size = 0.2)
+```
+
+
+
+
+Now I need to make a flag_sloughs script. 
+
+
+```{bash}
+
+# copy files
+cp pixel_cloud.nc pixel_cloud_flagged.nc
+cp pixc_gdem.nc pixc_gdem_flagged.nc
+
+# flag sloughs using R
+
+
+# Recreate riverobs outputs
+python $ROBIN/swot_pixc2rivertile.py pixel_cloud_flagged.nc rt_flagged.nc pcv_flagged.nc ../../config/config_newprior.rdf
+
+python $ROBIN/swot_pixc2rivertile.py pixc_gdem_flagged.nc rt_gdem_flagged.nc pcv_gdem_flagged.nc ../../config/config_newprior_gdem.rdf
+
+```
+
+Do a quick validation. 
+
+```{r}
+valdf1 <- rt_valdata("../output/sac18", flag_out_nodes = FALSE)
+valdf2 <- rt_valdata("../output/sac18", rtname = "rt_flagged.nc", 
+                     gdname = "rt_gdem_flagged.nc", flag_out_nodes = FALSE)
+
+rt_val_hist(valdf1, vars = c("area_total")) + xlim(-10000, 100000)
+rt_val_hist(valdf2, vars = c("area_total")) + xlim(-10000, 100000)
+
+
+```
+
+```{r}
+val_map_node("../output/sac18", pcv1 = "pcv_flagged.nc", 
+             pcv2 = "pcv_gdem_flagged.nc", pixc1 = "pixel_cloud_flagged.nc", 
+             pixc2 = "pixc_gdem_flagged.nc", maxpixels = 4000)
+```
+

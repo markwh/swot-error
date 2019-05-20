@@ -1,0 +1,121 @@
+---
+title: "notebook20190507"
+author: "Mark Hagemann"
+date: "5/7/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Investigating SRTM runs.
+
+```{r}
+matchruns1 <- romatch(63, c("refdem", "refdem_res", "priordb", "gdem_name"))
+```
+
+```{r}
+ro_manifest() %>% 
+  filter(outno %in% matchruns1,
+         priordb == "$PRIORLOC4")
+```
+
+Do the following comparisons: 61 to 54, 62 to 51, 63 and 64 to 52 and 53
+
+```{r}
+valdf <- rt_valdata_multi(c(54, 61))
+
+dplotfun1 <- function(runs) {
+  valdf <- rt_valdata_multi(runs)
+  valdf %>% 
+    filter(variable %in% c("height", "height2", "area_total", "width")) %>%
+    ggplot(aes(x = pixc_err)) +
+    geom_density(aes(color = refdem)) +
+    facet_wrap(~variable, scales = "free") +
+    ggtitle(paste("Pass:", unique(valdf$pass)))
+}
+
+dplotfun2 <- function(runs) {
+  valdf <- rt_valdata_multi(runs)
+  valdf %>% 
+    filter(variable %in% c("height", "height2", "area_total", "width")) %>%
+    mutate(scaled_err = pixc_err / sigma_est) %>% 
+    ggplot(aes(x = scaled_err)) +
+    geom_density(aes(color = refdem)) +
+    facet_wrap(~variable, scales = "free") +
+    ggtitle(paste("Pass:", unique(valdf$pass)))
+}
+
+
+dplotfun1(c(54, 61))
+ggsave("../fig/density-pass527-raw.png")
+dplotfun1(c(51, 62))
+ggsave("../fig/density-pass249-raw.png")
+dplotfun1(c(52, 53, 63, 64))
+ggsave("../fig/density-pass264-raw.png")
+
+dplotfun2(c(54, 61))
+ggsave("../fig/density-pass527-sacaled.png")
+dplotfun2(c(51, 62))
+ggsave("../fig/density-pass249-sacaled.png")
+dplotfun2(c(52, 53, 63, 64))
+ggsave("../fig/density-pass264-sacaled.png")
+
+
+```
+
+
+
+```{r}
+
+
+qqplotfun <- function(runs) {
+  valdf <- rt_valdata_multi(runs)
+  valdf %>% 
+    filter(variable %in% c("height", "height2", "area_total", "width")) %>%
+    mutate(scaled_err = pixc_err / sigma_est) %>% 
+    ggplot() +
+    geom_qq(aes(sample = scaled_err, color = refdem)) +
+    geom_abline(intercept = 0, slope = 1) +
+    facet_wrap(~variable, scales = "free") +
+    ggtitle(paste("Pass:", unique(valdf$pass)))
+}
+
+
+qqplotfun(c(54, 61))
+ggsave("../fig/qqplot-pass527.png")
+qqplotfun(c(51, 62))
+ggsave("../fig/qqplot-pass249.png")
+qqplotfun(c(52, 53, 63, 64))
+ggsave("../fig/qqplot-pass264.png")
+
+```
+
+```{r}
+
+valdf_264 <- rt_valdata_multi(c(52:53, 63:64)) %>% 
+  mutate(xtrk_dist = abs(xtrk_dist))
+# rt_val_scatter(valdf_264, variables = c("height", "height2"), 
+#                yvar = "relerr") +
+#   facet_grid(refdem ~ variable) +
+#   ylab("Scaled Error")
+rt_val_scatter(valdf_264, variables = c("height", "height2"), 
+               yvar = "relerr", xvar = "xtrk_dist") +
+  facet_grid(refdem ~ variable, scales = "free_y") +
+  ylab("Scaled Error") +
+  ggtitle("Pass 264, scaled error vs xtrk")
+ggsave("../fig/xtrkplot-pass264.png")
+
+valdf_527 <- rt_valdata_multi(c(54, 61)) %>% 
+  mutate(xtrk_dist = abs(xtrk_dist))
+# rt_val_scatter(valdf_264, variables = c("height", "height2"), 
+#                yvar = "relerr") +
+#   facet_grid(refdem ~ variable) +
+#   ylab("Scaled Error")
+rt_val_scatter(valdf_527, variables = c("height", "height2"), 
+               yvar = "relerr", xvar = "xtrk_dist") +
+  facet_grid(refdem ~ variable, scales = "free_y") +
+  ylab("Scaled Error")
+```
+

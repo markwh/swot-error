@@ -14,5 +14,5 @@ export SACDIR9="D:\data\sac-simulator-output\tile-Sac-11Feb2019\GDEM-DEM-ellip-2
 
 #export PRIORLOC1='D:/data/SWOT-prior/PriorDistributionFolder_old/netcdfv2/'
 export PRIORLOC1='D:/data/SWOT-prior/PriorDistributionFolder/netcdfV4/'
-export PRIORLOC2='C:\Users\markh\Documents\swot-error\data\priordb-update\Sac_sample_db9_4mark.nc'
+export PRIORLOC2='C:\Users\markh\Documents\swot-error\data\priordb-update\Sac_sample_db15.nc'
 export ROBIN='C:/Users/markh/Documents/RiverObs/src/bin/'
