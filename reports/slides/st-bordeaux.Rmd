@@ -1,0 +1,100 @@
+---
+title: "River Products Orientation"
+author: "Mark Hagemann"
+date: "5/20/2019"
+output: ioslides_presentation
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+## Intro
+
+Session in 3 parts
+
+1. Introduction/refresher on river products
+2. Hands-on demonstration of simulated data products
+3. Discussion 
+
+## Follow the information
+
+- Start with a satellite passing over the earth
+- overlay right, left swath 
+- highlight rivers from prior db
+- What does the satellite see? 
+  - Complex interferogram
+  - multilook 
+TODO: read relevant section in error budget, PIXC documents
+
+- SLC is multilooked to produce pixel cloud
+  - animation of SLC
+- Multilooked pixels are geolocated
+  - animation of pixc in slant coords geolocation to lat/lon
+- Pixel cloud Processing (RiverObs)
+  - pixcvec
+  - nodes
+  - reaches
+- Pixel cloud is aggregated to nodes
+  - Role of prior database
+- Nodes are aggregated to reaches
+  - Reach-specific fields
+- Splitting into river tiles
+- Formats 
+  - all as netcdf
+  - nodes and reaches as shapefiles
+- Example workflow
+  - Choose location, time of interest
+  - Download tile for a selected pass
+  - Work with tile data
+  
+- Overview of Sacramento River
+  - Where's it fit in size distribution?
+  - What passes go near it?
+  - Where do simulated data (PIXC) come from?
+    - hydraulic model
+
+
+## Hands-on demo
+
+### Objective: understand prior database
+
+- Map of region
+  - a priori database: centerlines, nodes, reaches
+  - Click for all info in prior database?
+    - This isn't a session on prior database!
+
+### Objective: understand passes, tiles
+
+- Map of region
+  - paths of satellite for different passes (toggle)
+  - outlines of tiles (toggle)
+- Timeseries of x-track distance
+- Not all passes see all nodes!
+- Select a tile, click "Get Data"
+  - Brings up pixc static image, zoomable via [this method](https://stackoverflow.com/a/26044171) or similar. 
+
+### Objective: Understand file structure
+
+- Files tab 
+  - netcdf tree structure
+
+### Objective: Understand pixel cloud, pixcvec
+
+- Show zoomable static image for pcv
+- 
+
+### Objective: Understand node product
+
+- Select nodes on map
+- Filter table with node data
+- Show plots of height, width, area
+
+### Objective: understand reach product
+
+- Show reaches on map
+- Show table with all reaches
+- Show plots of height, width, slope, area
+- Show regressions of node data 
+
+
