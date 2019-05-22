@@ -78,17 +78,21 @@ TODO: read relevant section in error budget, PIXC documents
 
 - Files tab 
   - netcdf tree structure
+  - shapefile attribute table headers
 
 ### Objective: Understand pixel cloud, pixcvec
 
 - Show zoomable static image for pcv
-- 
+- Show a single reach's pixels in interactive map
+  - radio buttons to choose which reach is displayed
+  - click node for info (height, area, etc.)
+- Table of pixel data
+  - filter by pixel selection
 
 ### Objective: Understand node product
 
 - Select nodes on map
-- Filter table with node data
-- Show plots of height, width, area
+- Filter table with node dataa
 
 ### Objective: understand reach product
 
@@ -96,5 +100,53 @@ TODO: read relevant section in error budget, PIXC documents
 - Show table with all reaches
 - Show plots of height, width, slope, area
 - Show regressions of node data 
+
+### Objective: understand factors affecting measurement precision
+
+
+
+### Objective: think critically about data contained in products
+
+Questions for discussion
+
+- Do any nodes' pixels surprise you? 
+- Do the linear fits for nodes --> reaches seem reasonable?
+- In what conditions would you be interested in using each tile? 
+  - Are some passes better suited for 
+
+
+## Summary
+
+The following are **sections** of the UI
+
+- header
+- map
+- table
+- file viewer
+- plots
+- selection
+  - tile, "get data"
+  - reach (pixc display, node --> reach aggregation)
+    - Possibly a range slider? 
+  - Map display toggles
+    - orbit tracks
+    - tile outlines
+    - nodes
+    - centerlines/reaches
+    - pixels (only once data is retrieved)
+    
+    
+## Actions
+
+- Click "get data"
+  - bring up file names for this tile
+
+## Required datasets
+
+- orbits
+- tiles?
+- pixel clouds
+- riverobs output
+
 
 
