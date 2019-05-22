@@ -1,0 +1,113 @@
+---
+title: "notebook20190521"
+author: "Mark Hagemann"
+date: "5/21/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Today: pre-munge some data objects for SWOT ST app
+
+### Munging prior db
+
+Should be able to display:
+
+- lat, lon
+- reach
+- node
+
+```{r}
+priorloc <- "~/Documents/swot-error/data/priordb-update/Sac_sample_db14.nc"
+
+foopts <- st_as_sf(foocl, coords = c("longitude", "latitude"), 
+                   crs = "+proj=longlat +datum=WGS84")
+
+
+
+foolines <- st_cast(foopts$geometry, to = "LINESTRING", ids = foopts$reach_id)
+plot(foolines)
+foolines <- aggregate(foopts, by = foopts$reach_id, FUN = st_)
+
+foolines_df <- foopts %>% 
+  group_by(reach_id, node_id) %>% 
+  summarise(geometry = st_cast(geometry, to = "LINESTRING", ids = 1)) %>% 
+  ungroup()
+
+foolines_df %>% 
+  mutate(reach_id = as.factor(reach_id)) %>% 
+  ggplot() + 
+  geom_sf(aes(color = reach_id))
+
+```
+
+
+```{r}
+foocl <- priorcl_read(priorloc)
+
+foocl %>% 
+  mutate(reach_id = as.factor(reach_id)) %>% 
+  ggplot() + 
+  geom_sf(aes(color = reach_id, fill = reach_id))
+
+foonode <- priornode_read(priorloc)
+
+foonode %>% 
+  mutate(reach_id = as.factor(reach_id)) %>% 
+  ggplot() + 
+  geom_sf(aes(color = reach_id))
+
+```
+
+
+Now try viewing passes. 
+
+```{r}
+passloc <- "~/Documents/swot-error/data/orbits/SWOT_ephemeris2015_science_full_0229.nc"
+ncfile <- passloc
+
+orbit_read <- function(ncfile, as_sf = TRUE, maxpoints = 1000) {
+  nc <- nc_open(ncfile)
+  on.exit(nc_close(nc))
+  
+  getvar <- function(var, ...) as.vector(ncvar_get(nc, var, ...))
+  passlat <- getvar("latitude")
+  passlon <- getvar("longitude")
+  npts <- length(passlat)
+  
+  keepinds <- 1:npts
+  if (npts > maxpoints) {
+    keepinds <- seq(1, npts, length.out = maxpoints)
+  }
+  
+  out <- data.frame(latitude = passlat, longitude = passlon) %>% 
+    mutate(londif = c(0, diff(longitude)), 
+           cutoff = abs(londif) > 300, 
+           splitvar = cumsum(cutoff)) %>% 
+    `[`(keepinds, ) %>% 
+    st_as_sf(coords = c("longitude", "latitude"),
+                          crs = "+proj=longlat +datum=WGS84") %>% 
+    group_by(splitvar) %>% 
+    summarize(geometry = st_cast(geometry, to = "LINESTRING", ids = splitvar)) %>% 
+    summarize(geometry = st_cast(geometry, to = "MULTILINESTRING", ids = 1))
+  out
+}
+
+foo <- orbit_read(ncfile)
+
+foo %>% 
+  ggplot() +
+  geom_sf() +
+  coord_sf()
+
+
+leaflet(foo) %>% 
+  addTiles() %>% 
+  addPolylines() %>% 
+  # leaflet::setView()
+  fitBounds(lng1 = -180, lat1 = -78, lng2 = 180, lat2 = 78)
+```
+
+May need to deal with wraparound, but I could probably ignore this for the moment.

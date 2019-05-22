@@ -40,25 +40,178 @@ rt_nodewise_error <- function(valdata, variable = "area_total", plot = TRUE, bre
 
 #' Read prior database for node info
 #' 
-#' @param nodeids vector of node indices
 #' @param ncfile netcdf file containing prior info
+#' @param nodeids optional vector of node indices
+#' @param reachids optional vector of reach indices
+#' @param as_sf Convert to spatial frame?
 #' 
 #' @export
-priornode_read <- function(nodeids, ncfile) {
+priornode_read <- function(ncfile, nodeids = NULL, reachids = NULL, as_sf = TRUE) {
   nc <- nc_open(ncfile)
   on.exit(nc_close(nc))
   
   getvar <- function(var, ...) as.vector(ncvar_get(nc, var, ...))
   ncnodeids <- getvar("nodes/node_id")
-  ncinds <- which(ncnodeids %in% nodeids)
-  outinds <- ncinds - min(ncinds) + 1
+  ncreachids <- getvar("nodes/reach_id")
   
+  ncinds <- 1:length(ncreachids) 
+  if (!is.null(nodeids)) {
+    ncinds <- match(nodeids, ncnodeids)
+  }
+  if (!is.null(reachids)) {
+    ncinds <- intersect(ncinds, match(reachids, ncreachids))
+  }
+  # browser()
+  outinds <- ncinds - min(ncinds) + 1
+  readstart <- min(ncinds)
+  readlen <- max(ncinds) - min(ncinds) + 1
+  
+  node_df <- data.frame(
+    node_id = ncnodeids[outinds],
+    reach_id = ncreachids[outinds],
+    latitude = getvar("nodes/y", start = readstart, count = readlen)[outinds],
+    longitude = getvar("nodes/x", start = readstart, count = readlen)[outinds])
+  
+  if (as_sf) {
+    out <- st_as_sf(node_df, coords = c("longitude", "latitude"),
+                          crs = "+proj=longlat +datum=WGS84")
+    
+  } else {
+    out <- node_df
+  }
+  
+  out
+}
+
+
+#' Read prior database for node info
+#' 
+#' Unclear when this function would be useful. 
+#' 
+#' @param nodeids vector of node indices
+#' @param ncfile netcdf file containing prior info
+#' 
+priorreach_read <- function(ncfile, reachids = NULL) {
+  nc <- nc_open(ncfile)
+  on.exit(nc_close(nc))
+  
+  getvar <- function(var, ...) as.vector(ncvar_get(nc, var, ...))
+  ncreachids <- getvar("reaches/reach_id")
+  
+  ncinds <- 1:length(ncreachids)
+  if (!is.null(reachids)) {
+    ncinds <- which(ncreachids %in% reachids)
+  }
+
+  outinds <- ncinds - min(ncinds) + 1
   readstart <- min(ncinds)
   readlen <- max(ncinds) - min(ncinds) + 1
   
   out <- data.frame(
-    node_id = nodeids,
-    latitude = getvar("nodes/y", start = readstart, count = readlen)[outinds],
-    longitude = getvar("nodes/x", start = readstart, count = readlen)[outinds])
+    reach_id = reachids,
+    latitude = getvar("reaches/y", start = readstart, count = readlen)[outinds],
+    longitude = getvar("reaches/x", start = readstart, count = readlen)[outinds])
   out
 }
+
+
+#' Read prior database for centerline info
+#' 
+#' Returns a sf object with linestring geometry.
+#' 
+#' @param ncfile netcdf file containing prior info
+#' @param nodeids optional vector of node indices
+#' @param reachids optional vector of reach indices
+#' @param as_sf Convert to spatial frame object?
+#' 
+#' @importFrom sf st_as_sf st_cast
+#' 
+#' @export
+priorcl_read <- function(ncfile, nodeids = NULL, reachids = NULL, 
+                         as_sf = TRUE) {
+  nc <- nc_open(ncfile)
+  on.exit(nc_close(nc))
+  
+  getvar <- function(var, ...) as.vector(ncvar_get(nc, var, ...))
+  ncnodeids <- ncvar_get(nc, "centerlines/node_id")[, 1]
+  ncreachids <- ncvar_get(nc, "centerlines/reach_id")[, 1]
+  
+  ncinds <- 1:length(ncnodeids)
+  if (!is.null(nodeids)) {
+    ncinds <- match(nodeids, ncnodeids)
+  }
+  if (!is.null(reachids)) {
+    ncinds <- intersect(ncinds, match(reachids, ncreachids))
+  }
+  
+  outinds <- ncinds - min(ncinds) + 1
+  readstart <- min(ncinds)
+  readlen <- max(ncinds) - min(ncinds) + 1
+  
+  cl_df <- data.frame(
+    node_id = ncnodeids[outinds],
+    reach_id = ncreachids[outinds],
+    latitude = getvar("centerlines/y", start = readstart, count = readlen)[outinds],
+    longitude = getvar("centerlines/x", start = readstart, count = readlen)[outinds])
+  
+  if (as_sf) {
+    cl_points <- st_as_sf(cl_df, coords = c("longitude", "latitude"),
+                          crs = "+proj=longlat +datum=WGS84")
+    out <- cl_points %>% 
+      group_by(node_id, reach_id) %>% 
+      summarize(geometry = st_cast(geometry, to = "LINESTRING", ids = 1)) %>% 
+      ungroup()
+    
+  } else {
+    out <- cl_df
+  }
+  
+  out
+}
+
+
+#' Read orbit locations
+#' 
+#' Returns a sf object with multilinestring geometry.
+#' 
+#' @param ncfile netcdf file containing prior info
+#' @param as_sf Convert to spatial frame object?
+#' @param maxpoints Maximum number of points to use for line resolution. 
+#' 
+#' @importFrom sf st_as_sf st_cast
+#' 
+#' @export
+orbit_read <- function(ncfile, as_sf = TRUE, maxpoints = 1000) {
+  nc <- nc_open(ncfile)
+  on.exit(nc_close(nc))
+  
+  getvar <- function(var, ...) as.vector(ncvar_get(nc, var, ...))
+  passlat <- getvar("latitude")
+  passlon <- getvar("longitude")
+  npts <- length(passlat)
+  
+  keepinds <- 1:npts
+  if (npts > maxpoints) {
+    keepinds <- seq(1, npts, length.out = maxpoints)
+  }
+  
+  out <- data.frame(latitude = passlat, longitude = passlon) %>% 
+    mutate(londif = c(0, diff(longitude)), 
+           cutoff = abs(londif) > 300, 
+           splitvar = cumsum(cutoff)) %>% 
+    `[`(keepinds, )
+  
+  if (as_sf) {
+    out <- out %>% 
+      st_as_sf(coords = c("longitude", "latitude"),
+               crs = "+proj=longlat +datum=WGS84") %>% 
+      group_by(splitvar) %>% 
+      summarize(geometry = st_cast(geometry, to = "LINESTRING", ids = splitvar)) %>% 
+      summarize(geometry = st_cast(geometry, to = "MULTILINESTRING", ids = 1))
+  }
+
+  out
+}
+
+
+```

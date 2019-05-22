@@ -1,0 +1,34 @@
+---
+title: "notebook20190522"
+author: "Mark Hagemann"
+date: "5/22/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+Yesterday I got the passes read in; today work on tiles. 
+
+Format is a little hard to understand. They only have 2 passes?
+
+```{r}
+tiles <- readr::read_delim("../data/tiles/tile-database-2018.txt", 
+                           delim = " ",
+                           col_types = "iinnn") %>% 
+  setNames(c("pass", "tiles", "latitude", "longitude", "heading"))
+
+tiles %>% 
+  ggplot(aes(x = longitude, y = latitude)) +
+  geom_point(aes(color = pass))
+  
+```
+
+Seems like a lot of work there. I don't doubt the information is in there, but now is not the time to do that. 
+
+
+First get the .RData files for the passes. 
+
+
