@@ -125,3 +125,69 @@ us_ds <- function(pcdf, verbose = FALSE) {
   out
 }
 
+
+#' Flag sloughs in pixel clouds in a given directory.
+#' 
+#' Uses \code{us_ds()} to connect pixels, adds a flag to those not connected.
+#' 
+#' @param dir directory containing RiverObs output
+#' @param pixcflag value to use for classifying sloughs in pixel cloud
+#' @param gdemflag value to use for classifying sloughs in gdem pixel cloud
+#' 
+#' @export
+flag_sloughs <- function(dir, pixcflag = 9L,
+                         gdemflag = 0L) {
+  
+  # create files to contain new classification
+  file.copy(paste0(dir, "/pixel_cloud.nc"), 
+            paste0(dir, "/pixel_cloud_flagged.nc"), overwrite = TRUE)
+  file.copy(paste0(dir, "/fake_pixc.nc"), 
+            paste0(dir, "/pixc_gdem_flagged.nc"), overwrite = TRUE)
+  
+  # connect pixels
+  message("Connecting pixel cloud")
+  pixccon <- us_ds(pixcvec_read(paste0(dir, "/pcv.nc")))
+  message("Connecting gdem pixel cloud")
+  gdemcon <- us_ds(pixcvec_read(paste0(dir, "/pcv_gdem.nc")))
+  message("Connected.")
+  
+  # Match connections to pixel cloud by range, azimuth
+  pixcnc <- nc_open(paste0(dir, "/pixel_cloud_flagged.nc"), write = TRUE)
+  # on.exit(nc_close(pixcnc))
+  
+  pixcclass <- ncvar_get(pixcnc, "pixel_cloud/classification")
+  pixcclass_out <- rep(pixcflag, length(pixcclass))
+  pixcrange <- ncvar_get(pixcnc, "pixel_cloud/range_index")
+  pixcazim <- ncvar_get(pixcnc, "pixel_cloud/azimuth_index")
+  pixcrangeazim <- pixcrange * 1e6 + pixcazim
+  
+  flagrangeazim <- with(pixccon[pixccon$connected, ], 
+                        range_index * 1e6 + azimuth_index)
+  flaginds <- match(flagrangeazim, pixcrangeazim)
+  
+  # Assign to classification
+  pixcclass_out[flaginds] <- pixcclass[flaginds]
+  ncvar_put(pixcnc, varid = "pixel_cloud/classification", pixcclass_out)    
+  nc_close(pixcnc)
+  
+  # Now gdem fake pixel cloud
+  gdemnc <- nc_open(paste0(dir, "/pixc_gdem_flagged.nc"), write = TRUE)
+  # on.exit(nc_close(gdemnc))
+  
+  gdemclass <- ncvar_get(gdemnc, "pixel_cloud/classification")
+  gdemclass_out <- rep(gdemflag, length(gdemclass))
+  gdemrange <- ncvar_get(gdemnc, "pixel_cloud/range_index")
+  gdemazim <- ncvar_get(gdemnc, "pixel_cloud/azimuth_index")
+  gdemrangeazim <- gdemrange * 1e6 + gdemazim
+  
+  flagrangeazim <- with(gdemcon[gdemcon$connected, ], 
+                        range_index * 1e6 + azimuth_index)
+  flaginds <- match(flagrangeazim, gdemrangeazim)
+  
+  # Assign to classification
+  # browser()
+  gdemclass_out[flaginds] <- gdemclass[flaginds]
+  ncvar_put(gdemnc, varid = "pixel_cloud/classification", gdemclass_out)
+  nc_close(gdemnc)
+  
+}

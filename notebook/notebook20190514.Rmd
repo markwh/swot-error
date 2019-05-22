@@ -55,9 +55,9 @@ flag_sloughs <- function(dir, pixcflag = 9L,
   
   # create files to contain new classification
   file.copy(paste0(dir, "/pixel_cloud.nc"), 
-            paste0(dir, "/pixel_cloud_flagged.nc"))
+            paste0(dir, "/pixel_cloud_flagged.nc"), overwrite = TRUE)
   file.copy(paste0(dir, "/fake_pixc.nc"), 
-            paste0(dir, "/pixc_gdem_flagged.nc"))
+            paste0(dir, "/pixc_gdem_flagged.nc"), overwrite = TRUE)
   
   # connect pixels
   message("Connecting pixel cloud")
@@ -71,17 +71,18 @@ flag_sloughs <- function(dir, pixcflag = 9L,
   # on.exit(nc_close(pixcnc))
   
   pixcclass <- ncvar_get(pixcnc, "pixel_cloud/classification")
+  pixcclass_out <- rep(pixcflag, length(pixcclass))
   pixcrange <- ncvar_get(pixcnc, "pixel_cloud/range_index")
   pixcazim <- ncvar_get(pixcnc, "pixel_cloud/azimuth_index")
   pixcrangeazim <- pixcrange * 1e6 + pixcazim
   
-  flagrangeazim <- with(pixccon[!pixccon$connected, ], 
+  flagrangeazim <- with(pixccon[pixccon$connected, ], 
                         range_index * 1e6 + azimuth_index)
   flaginds <- match(flagrangeazim, pixcrangeazim)
   
   # Assign to classification
-  pixcclass[flaginds] <- pixcflag
-  ncvar_put(pixcnc, varid = "pixel_cloud/classification", pixcclass)    
+  pixcclass_out[flaginds] <- pixcclass[flaginds]
+  ncvar_put(pixcnc, varid = "pixel_cloud/classification", pixcclass_out)    
   nc_close(pixcnc)
   
   # Now gdem fake pixel cloud
@@ -89,23 +90,26 @@ flag_sloughs <- function(dir, pixcflag = 9L,
   # on.exit(nc_close(gdemnc))
   
   gdemclass <- ncvar_get(gdemnc, "pixel_cloud/classification")
+  gdemclass_out <- rep(gdemflag, length(gdemclass))
   gdemrange <- ncvar_get(gdemnc, "pixel_cloud/range_index")
   gdemazim <- ncvar_get(gdemnc, "pixel_cloud/azimuth_index")
   gdemrangeazim <- gdemrange * 1e6 + gdemazim
   
-  flagrangeazim <- with(gdemcon[!gdemcon$connected, ], 
+  flagrangeazim <- with(gdemcon[gdemcon$connected, ], 
                         range_index * 1e6 + azimuth_index)
   flaginds <- match(flagrangeazim, gdemrangeazim)
 
   # Assign to classification
-  gdemclass[flaginds] <- gdemflag
-  ncvar_put(gdemnc, varid = "pixel_cloud/classification", gdemclass)
+  # browser()
+  gdemclass_out[flaginds] <- gdemclass[flaginds]
+  ncvar_put(gdemnc, varid = "pixel_cloud/classification", gdemclass_out)
   nc_close(gdemnc)
 
 }
 
 
 flag_sloughs("../output/sac18_improved")
+flag_sloughs("../output/sac18")
 
 ```
 
@@ -151,12 +155,92 @@ valdf2 <- rt_valdata("../output/sac18", rtname = "rt_flagged.nc",
 rt_val_hist(valdf1, vars = c("area_total")) + xlim(-10000, 100000)
 rt_val_hist(valdf2, vars = c("area_total")) + xlim(-10000, 100000)
 
+rt_val_hist(valdf1, vars = c("area_total"), scale = TRUE) +
+  xlim(-20, 20)
+rt_val_hist(valdf2, vars = c("area_total"), scale = TRUE) +
+  xlim(-20, 20)
+
+valdf1 %>% 
+  group_by(variable) %>% 
+  summarize(mean = mean(pixc_err / sigma_est), 
+            sd = sd(pixc_err / sigma_est))
+
+valdf2 %>% 
+  group_by(variable) %>% 
+  summarize(mean = mean(pixc_err / sigma_est), 
+            sd = sd(pixc_err / sigma_est))
+
 
 ```
 
 ```{r}
+nodes18 <- badnodes(rt_valdata("../output/sac18", rtname = "rt_flagged.nc", 
+                    gdname = "rt_gdem_flagged.nc", flag_out_nodes = FALSE))
+
+joinpix_flagged <- join_pixc("../output/sac18", pcvname = "pcv_flagged.nc", 
+                             pixcname = "pixel_cloud_flagged.nc")
+
+nodearea_plot(joinpix_flagged, nodes = nodes18, 
+              node_truth = rt_read("../output/sac18/rt_gdem_flagged.nc"))
+
+
 val_map_node("../output/sac18", pcv1 = "pcv_flagged.nc", 
+             nodes = 329,
              pcv2 = "pcv_gdem_flagged.nc", pixc1 = "pixel_cloud_flagged.nc", 
              pixc2 = "pixc_gdem_flagged.nc", maxpixels = 4000)
 ```
 
+That doesn't look right. 
+
+```{r}
+gdempcv <- join_pixc("../output/sac18", pcvname = "pcv_gdem.nc", 
+                     pixcname = "fake_pixc.nc")
+
+foo <- us_ds(gdempcv, verbose = TRUE)
+
+gdempcv$connected <- foo$connected
+
+gdempcv %>% 
+  filter(node_index == 329) %>% 
+  leaflet() %>% 
+  addTiles() %>% 
+  addCircles(radius = 5, stroke = FALSE, fillOpacity = 0.8)
+```
+
+```{r}
+gdpix1 <- pixc_read("../output/sac18/pixc_gdem_flagged.nc")
+gdpix2 <- pixcvec_read("../output/sac18/pcv_gdem_flagged.nc") %>% 
+  # filter(node_index > 329)
+  filter()
+
+gdpix <- left_join(gdpix1, gdpix2, by = c("range_index", "azimuth_index"))
+
+glimpse(gdpix)
+
+gdpix %>% 
+  ggplot(aes(x = longitude, y = latitude)) + 
+  geom_point(aes(color = classification), size = 0.01)
+ggsave(width = 12, height = 12, filename = "bigpix.png", dpi = 600)
+
+gdpix1 %>% 
+  filter(classification == 0) %>%
+  # glimpse() %>% 
+  ggplot(aes(x = longitude, y = latitude)) + 
+  geom_point(aes(color = classification), size = 0.2)
+
+```
+
+
+```{r}
+gdpixnc <- "../output/sac18/pixc_gdem_flagged.nc" %>% 
+  nc_open()
+
+lats <- ncvar_get(gdpixnc, "pixel_cloud/latitude")
+latinds <- which(lats > 39.374 & lats < 39.380)
+
+classes <- ncvar_get(gdpixnc, "pixel_cloud/classification")[latinds]
+
+```
+
+
+OK, I've got it fixed. (Remember, the pixcvec has fewer points than the pixel cloud so it matters how you join from one to the other.) Still doesn't lead to better overall validation, but it deals better with outliers, and bias is lower. Except when scaled. Put the flag function into lib/ and move on. 
