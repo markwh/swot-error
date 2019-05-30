@@ -212,3 +212,59 @@ orbit_read <- function(ncfile, as_sf = TRUE, maxpoints = 1000) {
   out
 }
 
+#' Get corners of tile polygon
+#' 
+#' @param nadir1,nadir2 length-2 vector giving longitude and latitude
+#' @param heading satellite heading in degrees
+#' @param xtstart,xtend Distance from nadir to start/end the swath, meters
+#' @param half Which half of the tile: "L" for left, "R" for right
+getTileCorners <- function(nadir1, nadir2, heading, xtstart = 4000, 
+                           xtend = 64000, half = c("L", "R")) {
+  half <- match.arg(half)
+  
+  xtdir <- heading + ifelse(half == "L", 90, -90)
+  xtdir <- ifelse(abs(xtdir) > 180, xtdir - 360, xtdir)
+  
+  
+  points1 <- geosphere::destPoint(nadir1, b = xtdir, d = c(xtstart, xtend))
+  points2 <- geosphere::destPoint(nadir2, b = xtdir, d = c(xtstart, xtend))
+  
+  out <- rbind(points1, points2[2:1, ], points1[1, ])
+  out
+}
+
+corner2sf <- function(cornermat) {
+  cornersf <- st_as_sf(cornermat[c(1, 2, 4, 3, 1), ], 
+                       coords = c("lon", "lat"),
+                       crs = "+proj=longlat +datum=WGS84")
+  out <- st_polygon(cornersf)
+  out
+}
+
+#' Get tiles as spatial frames POLYGON sfc
+#' 
+#' Returns a sfc with tile polygons
+#' 
+#' @param nadir1,nadir2 Either a length-2 vector or a 2-column matrix giving lon, lat
+#' @inheritParams getTileCorners
+getTilePolygons <- function(nadir1, nadir2, heading, half, xtstart = 4000, 
+                            xtend = 64000) {
+  splitfun <- function(x) {
+    if (is.numeric(x) && is.vector(x)) {
+      stopifnot(length(x) == 2)
+      x <- matrix(x, ncol = 2)
+    }
+    out <- split(x, f = 1:nrow(x))
+  }
+  nadir1 <- splitfun(nadir1)
+  nadir2 <- splitfun(nadir2)
+  stopifnot(length(nadir1) == length(nadir2))
+  
+  inputlist <- list(nadir1 = nadir1, nadir2 = nadir2, heading = heading, half = half)
+  
+  cornermats <- purrr::pmap(inputlist, getTileCorners, xtstart = xtstart, 
+                            xtend = xtend)
+  out <- st_sfc(st_polygon(cornermats), crs = "+proj=longlat +datum=WGS84")
+  out
+}
+

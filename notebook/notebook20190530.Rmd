@@ -1,0 +1,157 @@
+---
+title: "notebook201905230"
+author: "Mark Hagemann"
+date: "5/30/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Today I'm going to try to map the tiles given the very minimal information I have about them. 
+
+First work with the 2 passes (one orbit) data.frame I have. Write a function to get coordinates for the corners of a tile given a single lat/lon and heading. Possibly 2 lat/lon points, if I include the adjacent tile.
+
+Last time I worked on this was in 20190522.
+
+```{r}
+tiles <- readr::read_delim("../data/tiles/tile-database-2018.txt", 
+                           delim = " ",
+                           col_types = "iinnn") %>% 
+  setNames(c("pass", "tile", "latitude", "longitude", "heading"))
+
+nadir1mat <- as.matrix(tiles[c("longitude", "latitude")])
+nadir2mat <- rbind(nadir1mat[-1, ], c(NA, NA))
+
+tiles %>% 
+  ggplot(aes(x = longitude, y = latitude)) +
+  geom_point(aes(color = pass))
+
+head(tiles)
+```
+
+
+```{r}
+tilesrow <- c(22, 24)
+nadir1 <- nadir1mat[tilesrow, ]
+nadir2 <- nadir2mat[tilesrow, ]
+heading <- with(tiles[tilesrow, ], heading)
+xtstart <- 4000
+xtend <- 64000
+atend <- 64000
+half <- "L"
+
+getTileCorners <- function(nadir1, nadir2, heading, xtstart = 4000, 
+                           xtend = 64000, half = c("L", "R")) {
+  half <- match.arg(half)
+  
+  xtdir <- heading + ifelse(half == "L", 90, -90)
+  xtdir <- ifelse(abs(xtdir) > 180, xtdir - 360, xtdir)
+  
+  
+  points1 <- geosphere::destPoint(nadir1, b = xtdir, d = c(xtstart, xtend))
+  points2 <- geosphere::destPoint(nadir2, b = xtdir, d = c(xtstart, xtend))
+  
+  out <- rbind(points1, points2[2:1, ], points1[1, ])
+  out
+}
+
+corner2sf <- function(cornermat) {
+  cornersf <- st_as_sf(cornermat[c(1, 2, 4, 3, 1), ], 
+                       coords = c("lon", "lat"),
+                       crs = "+proj=longlat +datum=WGS84")
+  out <- st_polygon(cornersf)
+  out
+}
+
+#' Get tiles as spatial frames POLYGON sfc
+#' 
+#' @param nadir1,nadir2 Either a length-2 vector or a 2-column matrix giving lon, lat
+getTilePolygons <- function(nadir1, nadir2, heading, xtstart = 4000, 
+                            xtend = 64000, half = c("L", "R")) {
+  splitfun <- function(x) {
+    if (is.numeric(x) && is.vector(x)) {
+      stopifnot(length(x) == 2)
+      x <- matrix(x, ncol = 2)
+    }
+    out <- split(x, f = 1:nrow(x))
+  }
+  nadir1 <- splitfun(nadir1)
+  nadir2 <- splitfun(nadir2)
+  stopifnot(length(nadir1) == length(nadir2))
+  
+  inputlist <- list(nadir1 = nadir1, nadir2 = nadir2, heading = heading)
+  
+  cornermats <- purrr::pmap(inputlist, getTileCorners, xtstart = xtstart, 
+                         xtend = xtend, half = half)
+  out <- st_polygon(cornermats)
+  out
+}
+
+
+```
+
+Not sure why it isn't working. Here's a stripped-down `sf:::plot.sfc_POLYGON:
+
+```{r}
+x <- tilesfc[[1]]
+
+# Begin stripped-down function:
+plot_sf(x)
+lapply(seq_along(x), function(i) polypath(sf:::p_bind(x[[i]])))
+
+plot_pgon <- function(x) {
+  plot_sf(x)
+  pbinds <- lapply(x, sf:::p_bind)
+  lapply(seq_along(x), function(i) polypath(sf:::p_bind(x[[i]])))
+  invisible(NULL)
+}
+
+plot_pgon(x)
+plot_pgon(tilesfc)
+
+```
+
+Compare using nc data:
+
+```{r}
+nc = st_read(system.file("shape/nc.shp", package="sf"), quiet = TRUE)
+plot_pgon(nc$geometry[[1]])
+```
+
+For some reason sf:::p_bind isn't doing its job.
+
+```{r}
+sf:::p_bind
+
+sf:::p_bind(x)
+```
+
+Duh, I was using kilometers but should've used meters. Plots were too small!
+
+```{r}
+pgons <- getTilePolygons(nadir1mat[1:100, ], nadir2mat[1:100, ], tiles$heading[1:100])
+pgons_sf <- tiles[1:100, ] %>% mutate(geometry = st_sfc(pgons)) %>% 
+  st_sf(sf_column_name = "geometry", crs = "+proj=longlat +datum=WGS84")
+
+pgons_sf[1:10, ] %>% 
+  ggplot() + geom_sf()
+
+
+leaflet(pgons_sf$geometry[99]) %>% 
+  addTiles() %>% 
+  addPolygons(color = "red", stroke = TRUE)
+
+getTilePolygons(nadir1mat[270:280, ], nadir2mat[270:280, ], tiles$heading[270:280]) %>% 
+  st_sfc(crs = "+proj=longlat +datum=WGS84") %>% 
+  # as("spatial") %>% 
+  as_Spatial() %>% 
+  leaflet() %>% 
+  addTiles() %>% 
+  addPolygons(fillColor = "red")
+
+
+```
+
+Time to package this into a function to put in lib/. 
