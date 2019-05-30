@@ -1,0 +1,233 @@
+---
+title: "Width/Area Error Phenomena"
+author: "Mark Hagemann"
+date: "5/28/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE, cache = TRUE, cache.rebuild = FALSE)
+opts_knit$set(root.dir = "~/Documents/swot-error")
+```
+
+```{r}
+library(leaflet)
+library(ProjectTemplate)
+load.project(cache_loading = FALSE)
+
+runnos <- 51:54
+valvars <- c("width", "area_total")
+basedir <- "D:/data/riverobs-output/sacruns_latest"
+
+runinfo <- ro_manifest() %>% 
+  transmute(run = outno, pass, day) %>% 
+  filter(run %in% runnos)
+
+valdf_master_noflag <- rt_valdata_multi(runnos = runnos, 
+                     basedir = basedir,
+                     flag_out_nodes = FALSE) %>% 
+  mutate(xtrk_dist = abs(xtrk_dist))
+
+valdf_master <- rt_valdata_multi(runnos = runnos, 
+                     basedir = basedir,
+                     flag_out_nodes = TRUE) %>% 
+  mutate(xtrk_dist = abs(xtrk_dist)) %>% 
+  dplyr::filter(!(node_id == 438 & day == 110))
+
+# Node truth
+
+nodetruthdfs <- purrr::map(runnos, ~rt_read(fs::path(rodir(., basedir = basedir), 
+                                                   "rt_gdem.nc"))) %>% 
+  setNames(runinfo$day) %>% 
+  bind_rows(.id = "day") %>% 
+  split(.$day)
+
+  
+
+# pixc data
+pixcdf <- purrr::map(runnos, ~join_pixc(rodir(., basedir = basedir))) %>% 
+  setNames(runinfo$day) %>% 
+  bind_rows(.id = "day")
+pixcdf_list <- pixcdf %>% 
+  split(.$day)
+
+# gdemdf <- purrr::map(runnos, ~join_pixc(rodir(., basedir = basedir),
+#                                        pcvname = "pcv_gdem.nc",
+#                                        pixcname = "fake_pixc.nc")) %>%
+#   setNames(runinfo$day) %>%
+#   bind_rows(.id = "day")
+# gdemdf <- gdemdf %>% 
+#   filter(node_index %in% unique(badnodesdf$node_id))
+# cache("gdemdf")
+load("cache/gdemdf.RData")
+
+gdemdf_list <- gdemdf %>% 
+  split(.$day)
+
+```
+
+
+There are really 3 different ways that width and area errors diverge from the expected behavior given their uncertainty estimates (although the distinctions between the 3 are somewhat arbitrary). One of them is the familiar issue of "truth" not really being what we want it to be, and another is possibly related to that but a little fuzzier. The third issue I don't think can be explained that way, and I'm hoping you might have some ideas as to what's going on there. 
+
+
+## Datasets
+
+Here I'll be using 4 runs comprising 3 days (3 different passes)from SLC simulator output on the Sacramento River. Days 110 and 119 are from a low-flow condition, whereas day 220 is from a moderately high flow condition.
+
+## Phenomenon 1: questionable truth data
+
+As identified several months back, the truth data is not always reliable for comparing with simulations. This issue seems to only be a factor when flow is sufficiently high, at least on the Sacramento, as low flows do not have the problematic sluough features. 
+
+Quantile-quantile (QQ) plots of scaled width and area errors show significant high outliers in the higher flow case (day 220). 
+
+```{r}
+qqgg1 <- valdf_master_noflag %>%
+  mutate(day = as.factor(day)) %>% 
+  dplyr::filter(variable %in% valvars) %>% 
+  group_by(variable, day) %>% 
+  mutate(rel_err = pixc_err / sigma_est, 
+         theoretical = qqnorm(rel_err, plot.it = FALSE)$x) %>% 
+  ungroup() %>% 
+  ggplot(aes(x = theoretical, y = rel_err)) + 
+  geom_point(aes(text = node_id, color = day)) +
+  facet_wrap(~variable, scales = "free_y") +
+  geom_abline(slope = 1, intercept = 0) +
+  scale_color_brewer(palette = "Set1")
+
+qqgg1
+```
+
+Note that after they are scaled by their respective estimated uncertainty, the errors in width and area are identical. Since this is a familiar issue, I won't delve any further into it here.
+
+## Phenomenon 2: Heavy upper tail (right skew)
+
+I can dispatch with the issue described above by flagging nodes that have large difference in truth values between un-dilated (pre-segmentation dilation) and dilated cases. Doing so, and removing the flagged nodes results in the following "corrected" error distributions. 
+
+```{r}
+qqgg2 <- valdf_master %>%
+  mutate(day = as.factor(day)) %>% 
+  dplyr::filter(variable %in% valvars) %>% 
+  group_by(variable, day) %>% 
+  mutate(rel_err = pixc_err / sigma_est, 
+         theoretical = qqnorm(rel_err, plot.it = FALSE)$x) %>% 
+  ungroup() %>% 
+  ggplot(aes(x = theoretical, y = rel_err)) + 
+  geom_point(aes(text = node_id, color = day)) +
+  facet_wrap(~variable, scales = "free_y") +
+  geom_abline(slope = 1, intercept = 0) +
+  scale_color_brewer(palette = "Set1")
+
+qqgg2
+```
+
+Now the different days' scaled errors look very similar to one another in terms of distribution. But there is still a distinct upper tail to the distribution in all 3 days. At least some of this appears to come from dark water flagging, but only in certain nodes. The rest may be a combination of pixel assignment errors and lingering "questionable truth" issues. 
+
+Below are maps showing underlying pixel clouds for the 4 worst nodes in each pass. They are accompanied by plots showing node area aggregation from pixels, accounting for pixel area and water fraction. Dashed boxes show true node area from gdem. 
+
+```{r}
+badnodesdf <- valdf_master %>% 
+  filter(variable == "width", node_id != 438) %>% 
+  mutate(relerr = pixc_err / sigma_est) %>% 
+  group_by(day) %>% 
+  arrange(desc(relerr)) %>% 
+  mutate(rank = 1:n()) %>% 
+  dplyr::filter(rank <= 4) %>% 
+  ungroup()
+
+badnodes110 <- badnodesdf %>% 
+  filter(day == 110) %>% 
+  pull(node_id)
+badnodes119 <- badnodesdf %>% 
+  filter(day == 119) %>% 
+  pull(node_id)
+badnodes220 <- badnodesdf %>% 
+  filter(day == 220) %>% 
+  pull(node_id)
+
+
+# Pixc(vec) color legend
+classes <- c(1, 2, 3, 4, 22, 23, 24)
+classlabs <- c("gdem water", "land near water", "water near land", 
+               "open water", "land near dark water", 
+               "dark water edge", "dark water")
+classpal <- colorFactor(palette = "Set1", domain = classes)
+```
+
+Day 110 has some possible dark water issues; this is the pass that bisects the Sac. 
+
+```{r}
+pixcdf_list$`110` %>% 
+  filter(node_index %in% badnodes110) %>% 
+  leaflet() %>% 
+  addTiles() %>% 
+  addCircles(radius = ~(sqrt(pixel_area / pi)), 
+             fillColor = ~classpal(classification), 
+             stroke = FALSE, fillOpacity = 0.8) %>% 
+  addCircles(radius = ~(sqrt(pixel_area / pi)), 
+             fillColor = ~classpal(classification), 
+             stroke = FALSE, fillOpacity = 0.8,
+             data = filter(gdemdf_list$`110`, node_index %in% badnodes110), 
+             popup = ~paste(node_index)) %>% 
+  addLegend(position = "topright",
+            colors = classpal(classes),
+            labels = classlabs)
+
+nodearea_plot(pixcdf_list$`110`, badnodes110, node_truth = nodetruthdfs$`110`)
+```
+
+Day 119 is low-flow, far-swath. Again, there's some dark water flagging that may be messing things up, but it's only in part of the river. 
+
+```{r}
+pixcdf_list$`119` %>% 
+  filter(node_index %in% badnodes119) %>% 
+  leaflet() %>% 
+  addTiles() %>% 
+  addCircles(radius = ~(sqrt(pixel_area / pi)), 
+             fillColor = ~classpal(classification), 
+             stroke = FALSE, fillOpacity = 0.8) %>% 
+  addCircles(radius = ~(sqrt(pixel_area / pi)), 
+             fillColor = ~classpal(classification), 
+             stroke = FALSE, fillOpacity = 0.8,
+             data = filter(gdemdf_list$`119`, node_index %in% badnodes119), 
+             popup = ~paste(node_index)) %>% 
+  addLegend(position = "topright",
+            colors = classpal(classes),
+            labels = classlabs)
+
+nodearea_plot(pixcdf_list$`119`, badnodes119, node_truth = nodetruthdfs$`119`)
+```
+
+Day 220 is high-flow, mid-far swath. No dark water here. 
+
+```{r}
+pixcdf_list$`220` %>% 
+  filter(node_index %in% badnodes220) %>% 
+  leaflet() %>% 
+  addTiles() %>% 
+  addCircles(radius = ~(sqrt(pixel_area / pi)), 
+             fillColor = ~classpal(classification), 
+             stroke = FALSE, fillOpacity = 0.8) %>% 
+  addCircles(radius = ~(sqrt(pixel_area / pi)), 
+             fillColor = ~classpal(classification), 
+             stroke = FALSE, fillOpacity = 0.8,
+             data = filter(gdemdf_list$`220`, node_index %in% badnodes220), 
+             popup = ~paste(node_index)) %>% 
+  addLegend(position = "topright",
+            colors = classpal(classes),
+            labels = classlabs)
+
+nodearea_plot(pixcdf_list$`220`, badnodes220, node_truth = nodetruthdfs$`220`)
+
+```
+
+
+## Phenomenon 3: high variance (independent of skew)
+
+Even if the heavy upper tail is explained away as a result of unreliable "truth", the middle and lower parts of the distribution still do not conform to expectations. If they did, the points in the QQ plot (neglecting the upper tail) would lie very near to the dark 1:1 line. Instead, the points are closer to a line with slope equal to 2 (dotted line), meaning that uncertainty estimates are approximately half of what they should be according to empirical errors. There is also a bias of around 1 (no units since it's scaled by uncertainty). This points to a more systematic and pervasive issue than phenomena 1 and 2. At least it's one that I can't explain in terms of pixel assignment or bad truth data.
+
+
+```{r}
+qqgg2 + geom_abline(slope = 2, intercept = 0, linetype = 3)
+```
+

@@ -56,10 +56,10 @@ priornode_read <- function(ncfile, nodeids = NULL, reachids = NULL, as_sf = TRUE
   
   ncinds <- 1:length(ncreachids) 
   if (!is.null(nodeids)) {
-    ncinds <- match(nodeids, ncnodeids)
+    ncinds <- match(nodeids, which(ncreachids %in% nodeids))
   }
   if (!is.null(reachids)) {
-    ncinds <- intersect(ncinds, match(reachids, ncreachids))
+    ncinds <- intersect(ncinds, which(ncreachids %in% reachids))
   }
   # browser()
   outinds <- ncinds - min(ncinds) + 1
@@ -108,7 +108,7 @@ priorreach_read <- function(ncfile, reachids = NULL) {
   readlen <- max(ncinds) - min(ncinds) + 1
   
   out <- data.frame(
-    reach_id = reachids,
+    reach_id = getvar("reaches/reach_id", start = readstart, count = readlen)[outinds],
     latitude = getvar("reaches/y", start = readstart, count = readlen)[outinds],
     longitude = getvar("reaches/x", start = readstart, count = readlen)[outinds])
   out
@@ -138,10 +138,10 @@ priorcl_read <- function(ncfile, nodeids = NULL, reachids = NULL,
   
   ncinds <- 1:length(ncnodeids)
   if (!is.null(nodeids)) {
-    ncinds <- match(nodeids, ncnodeids)
+    ncinds <- match(nodeids, which(ncreachids %in% nodeids))
   }
   if (!is.null(reachids)) {
-    ncinds <- intersect(ncinds, match(reachids, ncreachids))
+    ncinds <- intersect(ncinds, which(ncreachids %in% reachids))
   }
   
   outinds <- ncinds - min(ncinds) + 1
@@ -168,7 +168,6 @@ priorcl_read <- function(ncfile, nodeids = NULL, reachids = NULL,
   
   out
 }
-
 
 #' Read orbit locations
 #' 
@@ -213,5 +212,3 @@ orbit_read <- function(ncfile, as_sf = TRUE, maxpoints = 1000) {
   out
 }
 
-
-```

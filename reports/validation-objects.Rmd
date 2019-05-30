@@ -40,7 +40,7 @@ valdirs <- rodir(valnums)
 
 ro_manifest() %>% 
   filter(outno %in% 51:54)
-valdf_master <- rt_valdata_multi(51:54) %>% 
+valdf_master <- rt_valdata_multi(runnos = 51:54, flag_out_nodes = FALSE) %>% 
   mutate(xtrk_dist = abs(xtrk_dist))
 reachvaldf <- rt_valdata_multi(51:54, group = "reaches")
 
@@ -356,7 +356,7 @@ QQ plots
 ```{r}
 qqgg1 <- valdf_master %>%
   mutate(day = as.factor(day)) %>% 
-  dplyr::filter(variable %in% valvars) %>% 
+  dplyr::filter(variable %in% valvars) %>% glimpse() %>% 
   group_by(variable, day) %>% 
   mutate(rel_err = pixc_err / sigma_est, 
          theoretical = qqnorm(rel_err, plot.it = FALSE)$x) %>% 
@@ -367,7 +367,7 @@ qqgg1 <- valdf_master %>%
   geom_abline(slope = 1, intercept = 0) +
   scale_color_brewer(palette = "Set1")
 
-
+qqgg1
 push2manuscript(qqgg1)
 # ggplotly(qqgg1, tooltip = "text")
 ```
