@@ -32,3 +32,124 @@ Seems like a lot of work there. I don't doubt the information is in there, but n
 First get the .RData files for the passes. 
 
 
+```{r}
+ro_manifest()$pass %>% unique()
+
+passes <- c(249, 264, 527)
+
+list.files("../data/orbits")
+passes_files <- sprintf("%s/SWOT_ephemeris2015_science_full_%04d.nc",
+                        "~/Documents/swot-error/data/orbits",
+                        passes)
+
+passes_sf <- map(passes_files, ~orbit_read(.)) %>% 
+  setNames(passes)
+
+
+allpasses_df <- passes_sf %>% 
+  map(~data.frame(.)) %>% 
+  bind_rows(.id = "pass")
+
+
+allgeoms <- Reduce(f = c, x = map(passes_sf, ~pull(., geometry)))
+allpasses_sf <- mutate(allpasses_df, geometry = allgeoms) %>% 
+  st_as_sf()
+  
+ggplot(allpasses_sf) +
+  geom_sf(aes(color = pass))
+
+```
+
+I should start a munge/ script for riverproducts app objects. DONE.
+
+Next, make a table for pass, tile, date. I suppose this would be a good time to select the simulations to show. These can be changed, of course. 
+
+```{r}
+ro_manifest() %>% 
+  filter(refdem == "GDEM", refdem_res == "10m", priordb == "$PRIORLOC4")
+  select(outno, pass, tile, day)
+```
+
+Good. Next, get the prior db. 
+
+```{r}
+ncfile <- "D:/data/SWOT-prior/PriorDistributionFolder/netcdfV4/NA07.nc"
+
+nodedf <- priornode_read(ncfile)
+
+reachpal <- colorNumeric("viridis", nodedf$reach_id)
+
+nodedf %>% 
+  filter(reach_id %in% 41352:41477) %>% 
+  leaflet() %>% 
+  addTiles() %>% 
+  addCircleMarkers(fillColor = ~reachpal(reach_id), fillOpacity = 0.8, 
+             stroke = FALSE, radius = 5,
+             popup = ~paste(reach_id)) %>% 
+  addLegend(pal = reachpal, values = ~reach_id)
+
+cldf <- priorcl_read(ncfile, reachids = (41352:41477))
+
+
+cldf %>% 
+  leaflet() %>% 
+  addTiles() %>% 
+  addPolylines(color = ~reachpal(reach_id), opacity = 0.8, 
+             stroke = FALSE, weight = 2,
+             popup = ~paste(reach_id)) %>% 
+  addLegend(pal = reachpal, values = ~reach_id)
+
+
+
+cldf[2, ] %>% 
+  ggplot() +
+  geom_sf()
+```
+
+This is taking a really long time. Is it faster if I do it all in one shot instead of a group_by/summarize?
+
+```{r}
+cldf <- priorcl_read(ncfile, reachids = (41352:41477), as_sf = FALSE) %>% 
+  filter(node_id != 0)
+
+clsf <- st_as_sf(cldf, coords = c("longitude", "latitude"))
+clsp <- st_cast(clsf$geometry, to = "LINESTRING", ids = clsf$node_id)
+
+cldf_smry <- data.frame(clsf) %>% 
+  group_by(node_id, reach_id) %>% 
+  summarize(n = n()) %>% 
+  ungroup()
+
+clsf_smry <- cldf_smry %>% 
+  arrange(node_id) %>% 
+  mutate(geometry = clsp) %>% 
+  st_as_sf()
+
+ggplot(clsf_smry) + 
+  geom_sf(aes(color = reach_id)) +
+  theme_minimal()
+
+```
+
+I think it will be easier to just focus on Sacramento reaches. Do one version for updated prior and one for original. 
+
+
+```{r}
+reaches1 <- path(rodir(40), "rt.nc") %>% 
+  rt_read(group = "reaches") %>% 
+  pull(reach_id)
+reaches2 <- path(rodir(52), "rt.nc") %>% 
+  rt_read(group = "reaches") %>% 
+  pull(reach_id)
+
+priorncfile1 <- "D:/data/SWOT-prior/PriorDistributionFolder/netcdfV4/NA07.nc"
+priorncfile2 <- path("~/Documents/swot-error/data/priordb-update/Sac_sample_db15.nc")
+
+
+clsf1 <- priorcl_read(priorncfile1, reachids = reaches1, as_sf = TRUE) 
+clsf2 <- priorcl_read(priorncfile2, reachids = reaches2, as_sf = TRUE) 
+
+ggplot(clsf1) + geom_sf(aes(color = reach_id))
+ggplot(clsf2) + geom_sf(aes(color = reach_id))
+```
+

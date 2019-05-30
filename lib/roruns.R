@@ -48,11 +48,16 @@ rodir <- function(runno, manifest = ro_manifest(),
 #' 
 rt_valdata_multi <- function(runnos, manifest = ro_manifest(),
                              basedir = getOption("ro_basedir"),
-                             group = c("nodes", "reaches")) {
+                             group = c("nodes", "reaches"), 
+                             flag_out_nodes = TRUE) {
   group <- match.arg(group)
-  valdfs <- purrr::map(runnos, ~rt_valdata(rodir(., manifest = manifest,
-                                                 basedir = basedir),
-                                           group = group)) %>% 
+  dirs <- rodir(runnos, 
+                manifest = manifest,
+                basedir = basedir)
+  # browser()
+  valdfs <- purrr::map(dirs, ~rt_valdata(dir = .,
+                                           group = group, 
+                                           flag_out_nodes = flag_out_nodes)) %>% 
     setNames(runnos)
   out <- bind_rows(valdfs, .id = "run") %>% 
     mutate(run = as.numeric(run)) %>% 
