@@ -1,0 +1,27 @@
+---
+title: "st2019_slides"
+author: "Mark Hagemann"
+date: "6/12/2019"
+output: ioslides_presentation
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+
+## Overview
+
+1. Short presentation of PIXC --> river products
+2. Play time with example river products
+3. Discussion
+
+## HR Processing Flow
+
+## HR Processing Flow: PIXC --> river products
+
+## Simulated data: Sacramento River
+
+
+## Pixel Cloud
+
