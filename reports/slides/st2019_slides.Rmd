@@ -6,7 +6,17 @@ output: ioslides_presentation
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE)
+library(knitr)
+library(leaflet)
+library(dplyr)
+
+opts_chunk$set(echo = FALSE, eval = TRUE)
+
+for (file in list.files("./rdata-bordeaux", full.names = TRUE)) {
+
+  load(file)
+}
+
 ```
 
 
@@ -18,10 +28,126 @@ knitr::opts_chunk$set(echo = FALSE)
 
 ## HR Processing Flow
 
+```{r}
+include_graphics("fig-bordeaux/flowchart1.png", dpi = 130)
+```
+
+## HR Processing Flow
+
+```{r}
+include_graphics("fig-bordeaux/flowchart3.png", dpi = 200)
+```
+
+
 ## HR Processing Flow: PIXC --> river products
 
-## Simulated data: Sacramento River
+```{r}
+include_graphics("fig-bordeaux/flowchart4.png")
+```
 
 
-## Pixel Cloud
+## Sacramento River Simulations
+
+```{r}
+llet1 <- exnodedf0 %>%
+  leaflet() %>% 
+  addTiles() %>% 
+  addCircles(radius = 100, stroke = FALSE, fillOpacity = 0.8)
+llet1
+```
+
+## Sacramento River Simulations {.columns-2}
+
+
+- 2-d Hydraulic models produce water levels
+- SLC simulator produces single-look complex (SLC)
+- Processed into pixel cloud as 
+- 3 different passes
+
+```{r}
+include_graphics("fig-bordeaux/width-histogram.png")
+```
+
+
+## Pixel Cloud {.columns-2}
+
+
+```{r}
+include_graphics("fig-bordeaux/exmap-base.png")
+```
+
+- Zoom in to a small section of Sacramento
+
+## Pixel Cloud {.columns-2}
+
+
+```{r}
+include_graphics("fig-bordeaux/pixc-slantplane.png")
+```
+
+- Pixel cloud in slant plane (looks like pixels!)
+- Already classified
+
+
+## Pixel Cloud {.columns-2}
+
+```{r}
+include_graphics("fig-bordeaux/exmap-pixc.png")
+```
+
+- Already classified
+- Already geolocated
+- 
+
+## Prior Reach, Node database
+
+```{r}
+include_graphics("fig-bordeaux/flowchart4.png")
+```
+
+
+## Prior Reach, Node database
+
+```{r}
+include_graphics("fig-bordeaux/priormap-full.png")
+```
+
+## Prior Reach, Node database
+
+- Freely available (thanks to Renato, Tamlin, Elizabeth)
+- Get it [here](https://osu.app.box.com/s/0rvisixd9lung1nqxkjo3msl89z9nkvk)
+
+## Pixel Cloud {.columns-2}
+
+
+## RiverObs
+
+- Open-source, on GitHub ([link](https://github.com/SWOTAlgorithms/RiverObs))
+    - You can use it!
+- Python modules, scripts
+
+
+
+## Returning to example {.columns-2}
+
+```{r}
+include_graphics("fig-bordeaux/exmap-pixc.png")
+```
+
+## Returning to example {.columns-2}
+
+
+```{r}
+
+```
+
+
+
+Starting from PIXC:
+
+- Segment water into disjoint features
+- Assign to nodes
+- Position relative to centerline
+- Improve geolocation
+
 

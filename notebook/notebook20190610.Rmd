@@ -1,0 +1,57 @@
+---
+title: "notebook20190610"
+author: "Mark Hagemann"
+date: "6/10/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+Trying to whip up a node and reach figure for Joe Turk.
+
+```{r}
+mapnodes <- rt_read(fs::path(rodir(47), "rt.nc"))
+nodeatts <- attr(mapnodes, "atts")
+basicatts <- nodeatts$name[nodeatts$tag_basic_expert == "Basic"]
+
+library(leaflet)
+mapnodes %>% 
+  leaflet() %>% 
+  addTiles() %>% 
+  addCircles(radius = 100, 
+             popup = ~paste0("Reach: ", reach_id, "<br/>Node: ", node_id))
+
+```
+
+Next a static map.
+
+```{r}
+mapdf <- mapnodes %>% 
+  filter(reach_id == 41382)
+
+library(ggmap)
+
+bbox <- with(mapdf, c(min(longitude), min(latitude), max(longitude), max(latitude)))
+bgmap <- get_map(location = bbox, maptype = "satellite", source = "google")
+osmap <- get_map(location = bbox, source = "osm")
+ggmap(bgmap)
+
+ggm3 <- ggmap(bgmap, darken = c(0.2, "white")) +
+    # ggplot(aes()) + 
+  geom_line(aes(x = longitude, y = latitude,
+                group = as.factor(pass),
+                linetype = pass),
+            data = mutate(passmapdf, pass = as.factor(pass)),
+            size = 1) + 
+  geom_point(aes(x = longitude, y = latitude, color = n), 
+             data = nodemapdf) +
+  scale_color_viridis_c()
+ggm3
+
+
+
+```
+
