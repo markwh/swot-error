@@ -19,22 +19,47 @@ Session in 3 parts
 
 ## Follow the information
 
-- Start with a satellite passing over the earth
-- overlay right, left swath 
-- highlight rivers from prior db
-- What does the satellite see? 
-  - Complex interferogram
-  - multilook 
-TODO: read relevant section in error budget, PIXC documents
 
-- SLC is multilooked to produce pixel cloud
-  - animation of SLC
-- Multilooked pixels are geolocated
-  - animation of pixc in slant coords geolocation to lat/lon
-- Pixel cloud Processing (RiverObs)
-  - pixcvec
-  - nodes
-  - reaches
+- Data processing flow chart, for orientation *annotated flow chart*
+  - Here's where the pixel cloud sits
+  - In this brief talk I'll touch on each of these pieces
+  - Using specific examples
+
+- Upstream: SLC, PIXC simulator
+  - Sacramento River
+  - location *Leflet of prior centerlines*
+  - *width histogram*--on the smallish side of SWOT-observable rivers
+  - Model output as input
+    - hydrodyanmic models --> SLC simulator --> pixel cloud generator --> pixel cloud
+
+- Start with Pixel cloud (since we've just covered that)
+  - Zoom in to a part of the Sacramento River *index map with box of zoom-in area*
+  - *example slant-plane fig*
+  - classified, e.g. land, water, etc. *color the image by class*
+  - geolocated *same pixels, now in lat/lon*
+  - height, area, classification, water fraction, number of looks, etc. 
+
+
+- Processed through RiverObs *simple black-box diagram*
+  - A bit about RiverObs: what it is, where it came from, what it does, where to get it, how to use it
+    - requisite shout-outs *GitHub contributors screenshot*
+    - where to find it, how to use it
+    - What it does, for our purposes
+      - inputs are pixel cloud (netcdf), prior database, configuration file
+      - outputs are pixcvec (netcdf), river tile vector products (shapefile and netcdf)
+    - brief mention of aggregation from pixels to nodes to reaches
+      - assignment of pixels to prior nodes *same pixel cloud zoom-in as before, showing node assignments*
+      - segment pixels *POSSIBLY add a figure*
+      - aggregate pixel values to node values (e.g. height, width, area)
+      - aggregate node values to reach values (including slope)
+        - ~50 nodes per reach
+      - compute additional pixel-scale values --> pixcvec
+      - write files
+    - it's open-source (unlike much of the rest of the processing chain)
+      - You can get it, use it, customize it
+      - If you have a pixel cloud, you can produce these outputs right now. 
+      - written in Python
+  
 - Pixel cloud is aggregated to nodes
   - Role of prior database
 - Nodes are aggregated to reaches
@@ -64,6 +89,10 @@ TODO: read relevant section in error budget, PIXC documents
   - a priori database: centerlines, nodes, reaches DONE
   - Click for all info in prior database?
     - This isn't a session on prior database!
+  - TEXT
+    - h2: Welcome, short overview of UI
+    - h2: prior database
+    - Where to go next
 
 ### Objective: understand passes, tiles
 
@@ -76,6 +105,8 @@ TODO: read relevant section in error budget, PIXC documents
 - Select a tile, click "Get Data"
   - What should this do?
   - Static image, zoomable via [this method](https://stackoverflow.com/a/26044171) or similar. POSSIBLY
+  - TEXT
+    - h2: 
 
 ### Objective: Understand file structure
 
@@ -105,10 +136,10 @@ TODO: read relevant section in error budget, PIXC documents
  
 ### Objective: understand reach product
 
-- Show reaches on map
-- Show table with all reaches
-- Show plots of height, width, slope, area
-- Show regressions of node data 
+- Show reaches on map DONE
+- Show table with all reaches DONE
+- Show plots of height, width, slope, area 
+- Show regressions of node data TODO
 
 ### Objective: understand factors affecting measurement precision
 
