@@ -222,7 +222,7 @@ getTileCorners <- function(nadir1, nadir2, heading, xtstart = 4000,
                            xtend = 64000, half = c("L", "R")) {
   half <- match.arg(half)
   
-  xtdir <- heading + ifelse(half == "L", 90, -90)
+  xtdir <- heading + ifelse(half == "R", 90, -90)
   xtdir <- ifelse(abs(xtdir) > 180, xtdir - 360, xtdir)
   
   
@@ -234,10 +234,10 @@ getTileCorners <- function(nadir1, nadir2, heading, xtstart = 4000,
 }
 
 corner2sf <- function(cornermat) {
-  cornersf <- st_as_sf(cornermat[c(1, 2, 4, 3, 1), ], 
-                       coords = c("lon", "lat"),
-                       crs = "+proj=longlat +datum=WGS84")
-  out <- st_polygon(cornersf)
+  # cornersf <- st_as_sf(cornermat[c(1, 2, 4, 3, 1), ], 
+  #                      coords = c("lon", "lat"),
+  #                      crs = "+proj=longlat +datum=WGS84")
+  out <- st_polygon(cornermat)
   out
 }
 
@@ -261,10 +261,11 @@ getTilePolygons <- function(nadir1, nadir2, heading, half, xtstart = 4000,
   stopifnot(length(nadir1) == length(nadir2))
   
   inputlist <- list(nadir1 = nadir1, nadir2 = nadir2, heading = heading, half = half)
-  
+  # browser()
   cornermats <- purrr::pmap(inputlist, getTileCorners, xtstart = xtstart, 
                             xtend = xtend)
-  out <- st_sfc(st_polygon(cornermats), crs = "+proj=longlat +datum=WGS84")
+  cornerpolys <- purrr::map(cornermats, ~st_polygon(list(.)))
+  out <- st_sfc(cornerpolys, crs = "+proj=longlat +datum=WGS84")
   out
 }
 

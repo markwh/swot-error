@@ -226,9 +226,12 @@ include_graphics("fig-bordeaux/sidecar_annotated.jpg", dpi = 80)
 
 ## Products: Interactive Demo
 
-- Link: [](http://swot-riv-viz.shinyapps.io/riverproducts/)
+- Link: [http://swot-riv-viz.shinyapps.io/riverproducts/](http://swot-riv-viz.shinyapps.io/riverproducts/)
+  - also 
 - ***Disclaimers***:
   - Processor, products not finalized
   - Simulated data may contain artifacts
   - App is not a SWOT product and is only intended for demonstration purposes
+- **Tips**:
+  - If you get disconnected, just reload the page. 
 

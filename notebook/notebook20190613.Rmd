@@ -40,7 +40,7 @@ exdir <- rodir(47)
 exnodedf0 <- rt_read(path(exdir, "rt.nc"))
 # exnodeind1 <- 400
 # exnodeinds <- exnodeind1 + 0:4
-exnode1 <- 3249230 
+exnode1 <- 3249239 
 exnodes <- exnode1 + 0:7
 
 # Pixel cloud

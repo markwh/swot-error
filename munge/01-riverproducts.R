@@ -42,6 +42,38 @@ sacpasses_sf <- mutate(sacpasses_df, geometry = allgeoms) %>%
 cache_rp(sacpasses_sf)
 
 
+# Tiles spatial data ------------------------------------------------------
+alltvp <- fs::path(rodir(51:54), "pixel_cloud.nc") %>% 
+  map(~pixc_read(ncfile = ., group = "tvp")) %>% 
+  setNames(51:54)
+nadir1 <- map(alltvp, ~c(.$longitude[1], .$latitude[1])) %>% 
+  Reduce(rbind, .)
+nadir2 <- map(alltvp, ~c(.$longitude[nrow(.)], .$latitude[nrow(.)])) %>% 
+  Reduce(rbind, .)
+hdg <- map_dbl(alltvp, ~median(.$velocity_heading))
+halves <- ro_manifest()[51:54, ] %>% pull("tile") %>% substr(4, 4)
+tilesfc <- getTilePolygons(nadir1, nadir2, hdg, halves)
+tilesf <- st_sf(data.frame(run = 51:54, geometry = tilesfc))
+
+cache_rp(tilesf)
+
+add_swot_tile <- function(map, nadir1, nadir2, heading, half, ...) {
+  # browser()
+  crnrs <- getTileCorners(nadir1, nadir2, heading, half = half)
+  lat <- crnrs[, 2]
+  lng <- crnrs[, 1]
+  
+  addPolygons(map = map, lng = lng, lat = lat, ...)
+}
+cache_rp(add_swot_tile)
+cache_rp(getTileCorners)
+tilelist <- map(list(nadir1 = nadir1, nadir2 = nadir2, heading = hdg, 
+                      half = halves), ~split(., 1:4)) %>% 
+  purrr::transpose() %>% 
+  setNames(51:54)
+cache_rp(tilelist)
+
+
 # Simulation info ---------------------------------------------------------
 
 rundf <- ro_manifest() %>% 
