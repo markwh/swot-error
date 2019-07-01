@@ -155,3 +155,21 @@ getTilePolygons(nadir1mat[270:280, ], nadir2mat[270:280, ], tiles$heading[270:28
 ```
 
 Time to package this into a function to put in lib/. 
+
+
+Does it work?
+
+```{r}
+with(tiles, getTilePolygons(nadir1 = c(longitude[1], latitude[1]), 
+                            nadir2 = c(longitude[2], latitude[2]),
+                            heading = heading[1], half = "L")) %>% 
+  as_Spatial() %>% 
+  leaflet() %>% 
+  addTiles %>% 
+  addPolygons()
+```
+
+```{r}
+
+```
+

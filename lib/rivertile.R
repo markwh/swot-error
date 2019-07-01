@@ -269,3 +269,22 @@ getTilePolygons <- function(nadir1, nadir2, heading, half, xtstart = 4000,
   out
 }
 
+
+#' Redux of join_pixc since I forgot to update the package.
+#' 
+join_pixc <- function (dir, pcvname = "pcv.nc", pixcname = "pixel_cloud.nc",
+                       type = c("inner", "outer")) {
+  
+  type <- match.arg(type)
+  
+  joinfun <- if (type == "inner") dplyr::inner_join else dplyr::full_join
+  
+  pcvdf <- pixcvec_read(path(dir, pcvname))
+  pixcdf <- pixc_read(path(dir, pixcname)) %>% 
+    joinfun(pcvdf, by = c("azimuth_index", "range_index")) %>% 
+    dplyr::mutate(pixel_id = 1:nrow(.))
+  pixcdf
+}
+
+
+

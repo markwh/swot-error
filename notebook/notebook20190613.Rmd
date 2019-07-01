@@ -7,6 +7,9 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+library(markswatch)
+# theme_set(theme_markdark())
+theme_set(theme_marklight())
 ```
 
 Figures for Bordeaux presentation
@@ -15,6 +18,7 @@ Figures for Bordeaux presentation
 ### Set up data
 
 ```{r}
+options(ro_basedir = "~/Documents/swot-error")
 # function to cache objects
 push2slides <- function(object) {
   objstring <- rlang::as_string(enexpr(object))
@@ -41,7 +45,8 @@ exnodes <- exnode1 + 0:7
 
 # Pixel cloud
 expixc0 <- join_pixc(exdir, type = "inner") %>% 
-  filter(node_index %in% exnodes)
+  filter(node_index %in% exnodes) %>% 
+  mutate(node_index = as.factor(node_index))
   
 exlat <- expixc0$latitude
 exlon <- expixc0$longitude
@@ -59,11 +64,14 @@ priornodedf <- priornodedf0 %>%
   filter(latitude >= min(exlat), latitude <= max(exlat),
          longitude >= min(exlon), longitude <= max(exlon))
 
+# Full (outer) joined pixc, pixcvec data
 expixc <- join_pixc(exdir, type = "outer") %>% 
   mutate(node_index = as.factor(node_index),
          classification = as.factor(classification))%>% 
   filter(latitude >= min(exlat), latitude <= max(exlat),
          longitude >= min(exlon), longitude <= max(exlon))
+
+# Pixel cloud filtered instead to fit in slant-plane bbox. 
 expixc2 <- join_pixc(exdir, type = "outer") %>% 
   mutate(node_index = as.factor(node_index),
          classification = as.factor(classification))%>% 
@@ -74,7 +82,7 @@ expixc2 <- join_pixc(exdir, type = "outer") %>%
 
 
 
-
+# exmap <- get_map(location = bbox)
 exmap <- get_map(location = bbox, maptype = "satellite", source = "google")
 ggmap(exmap)
 ```
@@ -87,13 +95,15 @@ push2slides(exnodedf0)
 
 Histogram 
 
-```{r}
+```{r, fig.with = 3, fig.height = 2.5}
 histgg <- exnodedf0 %>% 
   ggplot(aes(x = width)) +
-  geom_histogram() +
-  xlab("River Width (m)") +
-  ggtitle(sprintf("Median width: %s m", round(median(exnodedf0$width))))
-save2slides(histgg, "width-histogram.png")
+  geom_histogram(fill = "#222222", color = mypal$mid[3]) +
+  # geom_histogram() +
+  xlab("River Width (m)")
+  # ggtitle(sprintf("Median width: %s m", round(median(exnodedf0$width))))
+histgg
+save2slides(histgg, "width-histogram.png", width = 3, height = 2.5, dpi = 200)
 ```
 
 Zoom in to part of Sacramento
@@ -103,36 +113,48 @@ sacmap_full <- get_map(location = c(lon = median(exnodedf0$longitude),
                                     lat = median(exnodedf0$latitude)), zoom = 9, 
                        maptype = "terrain")
 
-ggmap(sacmap_full) + 
-  geom_point(aes(x = longitude, y = latitude), data = exnodedf0) +
-  geom_rect(xmin = bbox[1], ymin = bbox[2], xmax = bbox[3], ymax = bbox[4], color = "red")
+ggmap(sacmap_full) +
+# ggplot() +
+  geom_point(aes(x = longitude, y = latitude), data = exnodedf0,
+             size = 0.5) +
+  geom_rect(xmin = bbox[1], ymin = bbox[2], xmax = bbox[3], 
+            ymax = bbox[4], color = "red") +
+  theme_marklight()
 ```
 
 
-
-### Pixel assignment to node
+)
+### Pixel cloud illustration
 
 ```{r}
+# Basemap--no points, just tiles
 exmapgg <- ggmap(exmap)
 save2slides(exmapgg, "exmap-base.png")
 
+# slantplane fig, colored by classification
 gg1 <- expixc2 %>% 
   ggplot(aes(x = range_index, y = azimuth_index, fill = classification)) + 
-  geom_raster()
+  geom_raster() +
+  scale_fill_marklight_d() +
+  theme(legend.position = "none")
 gg1
 save2slides(gg1, "pixc-slantplane.png")
 
-
-exmap_pixc <- ggmap(exmap) + 
+# basemap with pixc overlaid
+exmap_pixc <- ggmap(exmap) +
+# exmap_pixc <-  ggplot() +
   geom_point(aes(x = longitude, y = latitude, 
                  color = classification), 
-             size = 4, alpha = 0.8,
+             size = 1.5, alpha = 0.8,
              data = expixc) +
-  scale_color_brewer(palette = "Set2")
+    scale_fill_marklight_d() + 
+  theme(legend.position = "none")
+embiggen(exmap_pixc, what = "text", factor = 3)
+  # scale_color_brewer(palette = "Set2")
 save2slides(exmap_pixc, "exmap-pixc.png")
 ```
 
-Now talk about prior db
+### Prior DB
 
 ```{r}
 
@@ -149,7 +171,8 @@ save2slides(priormapfull_gg, "priormap-full.png")
 
 
 # Prior nodes
-ggmap(exmap) + 
+ggmap(exmap) +
+  # ggplot() +
   geom_point(aes(x = longitude, y = latitude, 
                  fill = node_id), 
              shape = 21, color = "yellow",
@@ -158,25 +181,51 @@ ggmap(exmap) +
   scale_fill_brewer(palette = "Set1")
 
 ggmap()
+```
 
-ggmap(exmap) + 
-  geom_point(aes(x = longitude, y = latitude, 
-                 color = node_index), 
-             size = 4, alpha = 0.7,
-             data = expixc) +
-  scale_color_brewer(palette = "Set1")
+### vector products
 
-ggmap(exmap) + 
+```{r}
+
+# Pixels assigned to nodes
+
+library(leaflet)
+nodepal <- colorFactor(rep(marklightpal$swatch[-1], 
+                           length.out = length(levels(expixc$node_index))),
+                       levels(expixc$node_index))
+# exmap_pcv_node <- ggmap(exmap) + 
+
+pcvnodedf <- expixc %>% 
+  filter(!is.na(node_index)) %>% 
+  mutate(man_color = nodepal(as.character(node_index)))
+exmap_pcv_node <- ggmap(exmap, darken = c(.3, "black")) + #ggplot() + 
   geom_point(aes(x = longitude, y = latitude, 
+                 color = man_color,
+                 fill = man_color), 
+             size = 1, alpha = 0.7,
+             data = pcvnodedf) +
+  # scale_fill_marklight_d()
+  scale_fill_identity() + 
+  scale_color_identity() +
+  theme(legend.position = "none")
+  # scale_color_brewer(palette = "Set1")
+exmap_pcv_node
+save2slides(exmap_pcv_node, "exmap-pcv-node.png")
+
+exmap_pcv_class <- ggmap(exmap, darken = c(0.3, "black")) +
+# exmap_pcv_class <- ggplot() +
+  geom_point(aes(x = longitude, y = latitude, 
+                 fill = classification,
                  color = classification), 
-             size = 4, alpha = 0.8,
+             size = 1, alpha = 0.8,
              data = filter(expixc, !is.na(node_index))) +
-  scale_color_brewer(palette = "Set2")
+  scale_fill_marklight_d() +
+  scale_color_marklight_d() +
+  theme(legend.position = "none")
+  # scale_color_brewer(palette = "Set2")
+exmap_pcv_class
+save2slides(exmap_pcv_class, "exmap-pcv-class.png")
 
-
-gg2 <- gg1 + 
-  geom_point(aes(color = node_index))
-gg2
 ```
 
 
@@ -184,24 +233,45 @@ gg2
 ### Pixel aggregation to node
 
 ```{r}
-expixc %>% 
+aggdf1 <- expixc %>% 
   filter(classification == 4) %>% 
-  ggplot(aes(x = along_reach, y = height)) + 
-  geom_point(aes(color = node_index)) + 
-  scale_color_brewer(palette = "Set1")
+  mutate(mancolor = nodepal(node_index)) #glimpse()
+  
+node_agg_fig1 <- ggplot(aggdf1, aes(x = along_reach, y = height)) + 
+  geom_point(aes(color = mancolor), shape = 19) + 
+  scale_color_identity() +
+  # scale_fill_identity() +
+  # scale_color_manual(values = nodepal) +
+  # scale_fill_manual(values = nodepal) +
+  theme(legend.position = "none") +
+  xlab("Along-Stream Distance (m)")
+
+  
+  # scale_color_brewer(palette = "Set1")
+node_agg_fig1
+save2slides(node_agg_fig1, "node-agg-fig1.png")
 
 pixcdistdf <- expixc %>% 
+  filter(!is.na(node_index)) %>% 
   rename(node_id = node_index) %>% 
   group_by(node_id) %>% 
   summarize(along_reach = mean(along_reach))
 
-exnodedf %>% 
-  mutate(node_id = as.factor(node_id)) %>% 
+node_agg_fig2 <- exnodedf %>% 
+  mutate(node_id = as.factor(node_id),
+         mancolor = nodepal(node_id)) %>% #glimpse()
   left_join(pixcdistdf, by = "node_id") %>% 
-  ggplot(aes(x = along_reach, y = height, color = node_id)) + 
+  ggplot(aes(x = along_reach, y = height, color = mancolor)) + 
   geom_point(data = filter(expixc, classification == 4), color = NA) + 
-  geom_pointrange(aes(ymin = height - height_u, ymax = height + height_u))
-  
+  geom_pointrange(aes(ymin = height - height_u, ymax = height + height_u)) +
+  scale_color_identity() +
+  theme(legend.position = "none") +
+  xlab("Along-Stream Distance (m)")
+
+node_agg_fig2
+
+save2slides(node_agg_fig2, "node-agg-fig2.png")
+
 ```
 
 ### Result is a shapefile
@@ -242,41 +312,69 @@ reachreachdf <- nodereachdf %>%
   summarize(cumlen = mean(cumlen)) %>% 
   right_join(exreachdf, by = "reach_id") %>% 
   mutate(reach = as.factor(reach_id))
+
+nodereachfig1 <- nodereachdf %>% 
+  ggplot(aes(x = cumlen, y = height, group = reach, fill = reach, color = reach)) +
+  geom_point(size = 1) +
+  # geom_point(data = reachreachdf, size = 4, shape = 22, fill = "gray20")
+  xlab("along-river distance (m)") +
+  theme(legend.position = "none")
+nodereachfig1
+save2slides(nodereachfig1, "nodereachfig1.png")
   
-  
-nodereachdf %>% 
-  ggplot(aes(x = cumlen, y = height, group = reach, color = reach)) +
-  geom_point() +
+
+nodereachfig2 <- nodereachdf %>% 
+  ggplot(aes(x = cumlen, y = height, group = reach, fill = reach, color = reach)) +
+  geom_point(size = 1) +
+  # geom_point(data = reachreachdf, size = 4, shape = 22, fill = "gray20")
   stat_smooth(method = "lm", color = "black", se = FALSE) +
-  # geom_point(data = reachreachdf, size = 4, shape = 22, fill = "gray20")
-  xlab("along-river distance (m)")
+  xlab("along-river distance (m)") +
+  theme(legend.position = "none")
+nodereachfig2
+save2slides(nodereachfig2, "nodereachfig2.png")
 
-nodereachdf %>% 
+
+nodereachfig3 <- nodereachdf %>% 
   ggplot(aes(x = cumlen, y = height, group = reach, color = reach)) +
   geom_point(color = NA) +
   stat_smooth(method = "lm", se = FALSE) +
   # geom_point(data = reachreachdf, size = 4, shape = 22, fill = "gray20")
   xlab("along-river distance (m)") + 
-  geom_rug(data = reachreachdf)
+  geom_rug(data = reachreachdf) + 
+  theme(legend.position = "none")
+nodereachfig3
+save2slides(nodereachfig3, "nodereachfig3.png")
 
-nodereachdf %>% 
+nodereachfig4 <- nodereachdf %>% 
   ggplot(aes(x = cumlen, y = height, group = reach, color = reach)) +
   geom_point(color = NA) +
   stat_smooth(method = "lm", se = FALSE) +
   # geom_point(data = reachreachdf, size = 4, shape = 22, fill = "gray20")
   xlab("along-river distance (m)") + 
-  geom_rug(data = reachreachdf)
+  geom_rug(data = reachreachdf) + 
+  theme(legend.position = "none")
+nodereachfig4
+save2slides(nodereachfig4, "nodereachfig4.png")
 
-reachreachdf %>% 
+nodereachfig5 <- reachreachdf %>% 
   ggplot(aes(x = cumlen, y = height, color = reach, fill = reach)) + 
   geom_point(size = 4, shape = 22) +
+  geom_point(color = NA, data = nodereachdf) +
   xlab("along-river distance (m)") + 
-  geom_rug()
+  geom_rug() + 
+  theme(legend.position = "none")
+nodereachfig5
+save2slides(nodereachfig5, "nodereachfig5.png")
 
 
-reachreachdf %>% 
+nodereachfig6 <- reachreachdf %>% 
   ggplot(aes(x = cumlen, y = slope, color = reach, fill = reach)) + 
   geom_point(size = 4, shape = 22) +
-  ylab("slope (mm/km)")
+  ylab("slope (mm/km)") +
+  xlab("along-river distance (m)") + 
+  theme(legend.position = "none")
+nodereachfig6
+save2slides(nodereachfig6, "nodereachfig6.png")
+
 ```
 

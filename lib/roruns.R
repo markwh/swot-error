@@ -5,7 +5,8 @@
 roruns <- read.csv("src/roruns.csv", stringsAsFactors = FALSE)
 
 ro_manifest <- function(files = paste0("~/Documents/swot-error/src/",
-                                       c("roruns.csv", "roruns37.csv", "roruns61.csv"))) {
+                                       c("roruns.csv", "roruns37.csv", 
+                                         "roruns61.csv", "roruns65.csv"))) {
   runnames <- gsub("\\..+$", "", gsub("^.*(.*/)+", "", files))
   out <- purrr::map(files, ~read.csv(., stringsAsFactors = FALSE)) %>% 
     setNames(runnames) %>% 
