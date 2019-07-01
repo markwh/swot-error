@@ -138,7 +138,7 @@ include_graphics("fig-bordeaux/exmap-pixc.png")
 
 
 ```{r}
-
+include_graphics()
 ```
 
 
