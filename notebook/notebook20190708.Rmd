@@ -1,0 +1,241 @@
+---
+title: "notebook20190708"
+author: "Mark Hagemann"
+date: "7/8/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Today I'm getting to the bottom of the bad area error estimates. Possible issues are
+
+- water fraction error
+- classification error
+- node assignment error
+- pixel area error
+
+Ideas for what/how to test:
+
+- toggle area estimate method ("simple" or "composite") -- easy
+- return decomposition of error budget -- hard
+
+
+I'll need to set up a test environment. Pick a simulation run--pixc and gdem--and note effects on: 
+
+- scaled area error qq plot
+- individual nodes' pixel-area plot
+- reach area scaled error
+
+
+
+I choose pass 249, day 130, GDEM-dem (all nodes visible in middle-ish swath, lowest flow)
+
+```{r}
+ro_manifest() %>% 
+  filter(day == 130, pass == 249) %>% 
+  glimpse()
+```
+
+
+That's number 65. Make a directory for this set of investigations. 
+
+```{r}
+dir.create("../output/area-error")
+dir_copy(rodir(65), "../output/area-error/orig")
+```
+
+Now do runs. Redo original, just to be sure. 
+
+Here's simple validation:
+
+```{r}
+nodes_simple <- rt_read("../output/area-error/simple/rt.nc")
+
+rt_simple <- rt_read("../output/area-error/simple/rt.nc")
+val_simple <- rt_valdata("../output/area-error/simple/", flag_out_nodes = FALSE)
+# add in composite validation
+rt_composite <- rt_read("../output/area-error/composite/rt.nc")
+val_composite <- rt_valdata("../output/area-error/composite/", flag_out_nodes = FALSE)
+
+rt_composite_fixed <- rt_read("../output/area-error/composite_fixed/rt.nc")
+val_composite_fixed <- rt_valdata("../output/area-error/composite_fixed/", 
+                                  flag_out_nodes = FALSE)
+
+```
+
+Slight detour: need to fix attribute data.frame creation, since some attributes are vector-valued (e.g. flag_values). Possible workarounds:
+
+- `base::I()` to make a list column
+- `tidyr::tible()` to make list column by default
+
+
+```{r}
+
+foonc <- nc_open("../output/area-error/simple/rt.nc")
+names(foonc$var)
+foo <- ncatt_get(foonc, "nodes/ice_dyn_f")
+
+foolen <- map_int(foo, length)
+foo[foolen > 1] <- lapply(foo[foolen > 1], list)
+
+vecfun(foo)
+data.frame(foo)
+nc_close(foonc)
+
+bar <- rt_read("../output/area-error/simple/rt.nc")
+
+```
+
+
+Looks like variable names have been changed in the data product. That may really affect my analysis. What variables do I explicitly mention in my scripts, and what are they now? See `uncnames` variable in R/validate.R
+
+- height : wse
+- height_u : wse_r_u (intermediate name: wse_std)
+- height2 : wse
+- height2_u : wse_u
+- width : same
+- width_u : same
+- area_detct : same
+- area_det_u : same
+- area_total : same
+- area_tot_u : same
+- latitude : same
+- latitude_u : same
+- longitude : same
+- longitud_u : same
+
+
+
+Back to validation.
+
+```{r}
+rt_val_nodeseries(val_simple, variable = "width")
+rt_val_nodeseries(val_composite, variable = "width")
+
+valvars <- c("wse", "area_total", "width")
+valvars <- "area_total"
+
+val_simple %>% 
+  dplyr::filter(variable %in% valvars) %>% 
+  group_by(variable) %>% 
+  mutate(rel_err = pixc_err / sigma_est, 
+         theoretical = qqnorm(rel_err, plot.it = FALSE)$x) %>% 
+  ungroup() %>% 
+  ggplot(aes(x = theoretical, y = rel_err)) + 
+  # geom_point(aes(text = node_id, color = day)) +
+  geom_point() +
+  facet_wrap(~variable, scales = "free_y") +
+  geom_abline(slope = 1, intercept = 0)
+
+# ggsave("../fig/area-error-simple.png")
+
+val_composite %>% 
+  dplyr::filter(variable %in% valvars) %>%
+  group_by(variable) %>% 
+  mutate(rel_err = pixc_err / sigma_est, 
+         theoretical = qqnorm(rel_err, plot.it = FALSE)$x) %>% 
+  ungroup() %>% 
+  ggplot(aes(x = theoretical, y = rel_err)) + 
+  # geom_point(aes(text = node_id, color = day)) +
+  geom_point() +
+  facet_wrap(~variable, scales = "free_y") +
+  geom_abline(slope = 1, intercept = 0)
+
+# ggsave("../fig/area-error-composite.png")
+
+val_composite_fixed %>% 
+  dplyr::filter(variable %in% valvars) %>%
+  group_by(variable) %>% 
+  mutate(rel_err = pixc_err / sigma_est, 
+         theoretical = qqnorm(rel_err, plot.it = FALSE)$x) %>% 
+  ungroup() %>% 
+  ggplot(aes(x = theoretical, y = rel_err)) + 
+  # geom_point(aes(text = node_id, color = day)) +
+  geom_point() +
+  facet_wrap(~variable, scales = "free_y") +
+  geom_abline(slope = 1, intercept = 0)
+
+val_composite_fixed %>% 
+  rt_val_hist(scale = TRUE, curve = TRUE, vars = "area_total")
+val_composite %>% 
+  rt_val_hist(scale = TRUE, curve = TRUE, vars = "area_total")
+```
+
+Map the worst offenders.
+
+```{r}
+simple_pix <- join_pixc("../output/area-error/simple/", 
+                        pixcname = "../pixel_cloud.nc")
+simple_pix_gdem <- join_pixc("../output/area-error/simple",
+                             pixcname = "../fake_pixc.nc", pcvname = "pcv_gdem.nc")
+
+library(leaflet)
+
+badnodes_simple <- badnodes(val_simple, n = 6)
+
+pixdf1 <- simple_pix %>% 
+  filter(node_index %in% badnodes_simple) %>% 
+  transmute(azimuth_index, range_index, node_index, reach_index,
+            lat_med = latitude, lon_med = longitude,
+            lat_wd = latitude_vectorproc, lon_wd = longitude_vectorproc,
+            water_frac, water_frac_uncert,
+            classification, fdr = false_detection_rate, 
+            mdr = missed_detection_rate, Pw = prior_water_prob,
+            pixel_area)
+pixdf2 <- simple_pix_gdem %>% 
+  filter(node_index %in% badnodes_simple) %>% 
+  transmute(azimuth_index, range_index, node_index, reach_index,
+            lat_gdem = latitude, lon_gdem = longitude, pixel_area)
+
+classpal <- colorFactor("Dark2", pixdf1$classification)
+
+leaflet_unscaled <- leaflet() %>% 
+  addTiles() %>% 
+  addCircles(~lon_gdem, ~lat_gdem, 
+             radius = ~sqrt(pixel_area / pi),
+             fillColor = "red", fillOpacity = 0.8, stroke = FALSE, 
+             data = pixdf2) %>% 
+  addCircles(~lon_wd, ~lat_wd, radius = ~sqrt(pixel_area / pi),
+             fillColor = ~classpal(classification), stroke = FALSE, 
+             fillOpacity = 0.8, data = pixdf1)
+htmlwidgets::saveWidget(leaflet_unscaled, "../fig/leaflet_unscaled.html")
+
+leaflet_scaled <- leaflet() %>% 
+  addTiles() %>% 
+  addCircles(~lon_gdem, ~lat_gdem, 
+             radius = ~sqrt(pixel_area / pi),
+             fillColor = "red", fillOpacity = 0.8, stroke = FALSE, 
+             data = pixdf2) %>% 
+  addCircles(~lon_wd, ~lat_wd, radius = ~sqrt(pixel_area / pi * water_frac),
+             fillColor = ~classpal(classification), stroke = FALSE, 
+             fillOpacity = 0.8, data = pixdf1)
+htmlwidgets::saveWidget(leaflet_scaled, "../fig/leaflet_scaled.html")
+
+
+```
+
+That is really illuminating! So why does the gdem show multichannel behavior but the pixel cloud doesn't? That will have to be a question for another day. 
+
+
+What about straight-up comparison of raw errors between simple and composite?
+
+```{r}
+val_full <- list(composite = val_composite, simple = val_simple) %>% 
+  bind_rows(.id = "area_agg")
+
+val_full %>% 
+  filter(variable %in% valvars) %>% 
+  select(node_id, reach_id, variable, pixc_err, area_agg) %>%
+  # glimpse()
+  spread(key = area_agg, value = pixc_err) %>% 
+  # glimpse()
+  ggplot(aes(x = simple, y = composite)) +
+  geom_point() +
+  facet_wrap(~variable, scales = "free") + 
+  geom_abline(aes(slope = 1, intercept = 0))
+ggsave("../fig/area-error-compare.png")
+```
+
+
