@@ -16,3 +16,4 @@ output
 *pycache*
 *.PNG
 *.RData
+fig/area-error*

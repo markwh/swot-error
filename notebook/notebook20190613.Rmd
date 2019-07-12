@@ -274,6 +274,54 @@ save2slides(node_agg_fig2, "node-agg-fig2.png")
 
 ```
 
+Uncertainty validation aside
+
+```{r}
+empnodedf <- rt_read(path(exdir, "rt_gdem.nc")) %>% 
+  transmute(node_id, height_gdem = height, width_gdem = width) %>% 
+  left_join(x = exnodedf, y = ., by = "node_id")
+
+node_unc_fig1 <- empnodedf %>% 
+  mutate(node_id = as.factor(node_id),
+         mancolor = nodepal(node_id)) %>% #glimpse()
+  left_join(pixcdistdf, by = "node_id") %>% 
+  ggplot(aes(x = along_reach, y = height, color = mancolor)) + 
+  # geom_point(data = filter(expixc, classification == 4), color = NA) +
+  geom_pointrange(aes(ymin = height - height_u, ymax = height + height_u)) +
+  geom_point(aes(y = height_gdem), color = "red", shape = 18) +  
+  scale_color_identity() +
+  theme(legend.position = "none") +
+  xlab("Along-Stream Distance (m)")
+
+node_unc_fig1
+save2slides(node_unc_fig1, "node-unc-fig1.png", width = 3.5, height = 3)
+
+
+node_unc_fig2 <- empnodedf %>% 
+  mutate(node_id = as.factor(node_id),
+         mancolor = nodepal(node_id)) %>% #glimpse()
+  left_join(pixcdistdf, by = "node_id") %>% 
+  ggplot(aes(x = along_reach, y = width, color = mancolor)) + 
+  # geom_point(data = filter(expixc, classification == 4), color = NA) +
+  geom_pointrange(aes(ymin = width - width_u, ymax = width + width_u)) +
+  geom_point(aes(y = width_gdem), color = "red", shape = 18) +  
+  scale_color_identity() +
+  theme(legend.position = "none") +
+  xlab("Along-Stream Distance (m)")
+
+node_unc_fig2
+```
+
+```{r}
+
+node_unc_fig3 <- rt_valdata(exdir, flag_out_nodes = FALSE) %>% 
+  rt_val_hist(vars = "height", center = FALSE, scale = TRUE, curve = TRUE) +
+  xlab("scaled node height error")
+save2slides(node_unc_fig3, "node-unc-fig3.png", width = 3.5, height = 3)
+```
+
+
+
 ### Result is a shapefile
 
 ```{r}

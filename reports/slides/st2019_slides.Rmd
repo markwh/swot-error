@@ -1,7 +1,7 @@
 ---
 title: "SWOT River Products"
-author: "Mark Hagemann"
-date: "6/12/2019"
+author: "Mark Hagemann, Ohio State University"
+date: "6/17/2019"
 output: 
   ioslides_presentation:
     incremental: true
@@ -24,8 +24,8 @@ for (file in list.files("./rdata-bordeaux", full.names = TRUE)) {
 
 ## Overview
 
-1. Short presentation of PIXC --> river products
-2. Play time with example river products
+1. Short illustration of PIXC --> river products
+2. Interactive demo using example river products
 3. Discussion
 
 ## HR Processing Flow
@@ -48,9 +48,9 @@ include_graphics("fig-bordeaux/flowchart4.png")
 ```
 
 
-
-
 ## Sacramento River Simulations {.columns-2 .smaller}
+
+*Where do PIXC's come from?*
 
 ```{r, fig.width = 3}
 llet1 <- exnodedf0 %>%
@@ -62,7 +62,6 @@ llet1 <- exnodedf0 %>%
 llet1
 ```
 
-<br/>
 <br/>
 <br/>
 <br/>
@@ -90,7 +89,7 @@ include_graphics("fig-bordeaux/flowchart4-pixc.png")
 ## Pixel Cloud
 
 ```{r}
-include_graphics("fig-bordeaux/exmap-base.png", dpi = 200)
+include_graphics("fig-bordeaux/exmap-base.png")
 ```
 
 - Zoom in to a small section of Sacramento
@@ -100,7 +99,7 @@ include_graphics("fig-bordeaux/exmap-base.png", dpi = 200)
 ## Pixel Cloud {.smaller}
 
 ```{r}
-include_graphics("fig-bordeaux/exmap-pixc.png")
+include_graphics("fig-bordeaux/exmap-pixc.png" )
 ```
 
 - Already geolocated
@@ -130,7 +129,7 @@ include_graphics("fig-bordeaux/flowchart4-priordb.png")
 include_graphics("fig-bordeaux/priormap-full.png")
 ```
 
-- Freely available (thanks to Renato, Tamlin, Elizabeth)
+- Freely available (thanks to Elizabeth, Renato, Tamlin)
 - Get it [here](https://osu.app.box.com/s/0rvisixd9lung1nqxkjo3msl89z9nkvk)
 
 ## RiverObs
@@ -146,9 +145,8 @@ include_graphics("fig-bordeaux/flowchart4-riverobs.png")
 include_graphics("fig-bordeaux/riverobs-github3.png", dpi = 100)
 ```
 
-
-- Open-source, on GitHub ([link](https://github.com/SWOTAlgorithms/RiverObs))
 - Python modules, scripts for processing pixel clouds into river products
+- Open-source, on GitHub ([link](https://github.com/SWOTAlgorithms/RiverObs))
 - You can use it!* 
   - *if you can get your hands on a pixel cloud
 
@@ -180,13 +178,6 @@ include_graphics("fig-bordeaux/exmap-pcv-node.png")
 - Assign to nodes (using prior database)
 - Improve geolocation (Not shown here, requires CNES module)
 
-## RiverObs processing
-
-```{r}
-include_graphics("fig-bordeaux/exmap-pcv-node.png")
-```
-
-
 ## Node Height Aggregation
 
 Pixel heights (interior water only)
@@ -203,8 +194,81 @@ Resulting node heights (with 1-sigma uncertainty)
 include_graphics("fig-bordeaux/node-agg-fig2.png")
 ```
 
-## Aside: Uncertainty validation
+## *Aside:* Uncertainty Validation {.columns-2 .smaller}
 
+```{r}
+include_graphics("fig-bordeaux/node-unc-fig1.png")
+```
+
+<br/>
+<br/>
+
+- Observations are supplied with *theoretical* (not empirical) uncertainty estimates
+- Want to validate these estimates against empirical errors
+    - Use synthetic node data from GDEM "Truth"
+- Resulting errors (estimated - truth) form a validation dataset over entire set of nodes
+
+## *Aside:* Uncertainty Validation {.columns-2 .smaller}
+
+
+```{r}
+include_graphics("fig-bordeaux/node-unc-fig3.png")
+```
+
+<br/>
+<br/>
+
+
+
+- Scaling these errors by estimated $1\sigma$ uncertainty produces *empirical* distribution with *theoretical* standard deviation = 1. 
+- Compare empirical histogram to theoretical distribution curve (assuming Gaussian)
+- Height estimates peform very well
+- Width and area estimates are close but not as good
+
+## *End Aside*
+
+## Aggregate Nodes to Reaches
+
+```{r}
+include_graphics("fig-bordeaux/nodereachfig1.png")
+```
+
+- All nodes' heights (as aggregated from pixels)
+- Color denotes reach
+
+## Aggregate Nodes to Reaches
+
+```{r}
+include_graphics("fig-bordeaux/nodereachfig2.png")
+```
+
+- Fit linear model to each reach
+
+## Aggregate Nodes to Reaches
+
+```{r}
+include_graphics("fig-bordeaux/nodereachfig3.png")
+```
+
+- Linear models determine reach **height** and **slope**
+
+
+## Aggregate Nodes to Reaches
+
+```{r}
+include_graphics("fig-bordeaux/nodereachfig5.png")
+```
+
+- Values from all nodes in reach aggregate to produce a single reach-average value
+
+
+## Aggregate Nodes to Reaches
+
+```{r}
+include_graphics("fig-bordeaux/nodereachfig6.png")
+```
+
+>- Values from all nodes in reach aggregate to produce a single reach-average value
 
 
 
@@ -217,21 +281,28 @@ include_graphics("fig-bordeaux/flowchart4-products.png")
 
 - We'll see them in action in a minute!
 
-## Products: PIXCVec
+## Products: PIXCVec {.columns-2}
 
 ```{r}
-include_graphics("fig-bordeaux/sidecar_annotated.jpg", dpi = 80)
+include_graphics("fig-bordeaux/sidecar_annotated.jpg", dpi = 130)
 ```
 
+<br/>
+<br/>
+<br/>
+<br/>
+
+- PIXC is a standalone product
+- PIXCVec works best joined to PIXC
 
 ## Products: Interactive Demo
 
-- Link: [http://swot-riv-viz.shinyapps.io/riverproducts/](http://swot-riv-viz.shinyapps.io/riverproducts/)
-  - also 
+- **Link**: [bit.ly/riverproducts/](http://swot-riv-viz.shinyapps.io/riverproducts/)
 - ***Disclaimers***:
   - Processor, products not finalized
   - Simulated data may contain artifacts
   - App is not a SWOT product and is only intended for demonstration purposes
 - **Tips**:
   - If you get disconnected, just reload the page. 
+  - If the UI is slow, be patient--operations should be faster after the first one.
 

@@ -1,0 +1,111 @@
+---
+title: "Research Update 20190712"
+author: "Mark Hagemann"
+date: "7/12/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(ggplot2)
+```
+
+
+## Background
+
+- I'm trying to validate estimates of uncertainty
+
+
+```{r}
+truth <- rnorm(20, 15, 3)
+sigs <- runif(20, 0.5, 1.5)
+ests <- truth + rnorm(20, 0, sigs)
+
+plotdf <- data.frame(index = 1:20, truth = truth, ests = ests, sig = sigs) %>% 
+    mutate(resid = truth - ests)
+
+
+plotdf %>% 
+  ggplot(aes(x = index)) + 
+  geom_pointrange(aes(ymin = ests - sig, y = ests, ymax = ests + sig)) + 
+  geom_point(aes(y = truth), color = "red") 
+
+```
+
+## Model residuals
+
+```{r}
+plotdf %>% 
+  ggplot(aes(x = index, y = resid)) + 
+  geom_ribbon(aes(ymin = -sig, ymax = sig))
+  geom_point(color = "red")
+
+
+plotdf %>% 
+  ggplot() + 
+  geom_histogram(aes(x = resid), bins = 7)
+```
+
+## Scaled residuals
+
+```{r}
+plotdf %>% 
+  ggplot(aes(x = index, y = resid)) + 
+  geom_point()
+
+plotdf %>% 
+  ggplot() + 
+  geom_histogram(aes(x = resid), bins = 7)
+```
+
+
+## Plotting distributions
+
+- histogram
+  - intuitive
+  - bins data (don't see individual data points)
+- QQ plot
+  - less intuitive
+  - more information-rich (individual data points)
+  - compares to a known distribution (typically N(0,1))
+
+## What you can learn from QQ plots
+
+- Similarity to normal distribution
+- Normality, skew, heavy-tail behavior
+- Bias (from vertical shift)
+- Standard deviation (from slope)
+- All of the above for isolated parts of distribution
+
+
+## QQ plots 1
+
+
+```{r}
+samp1 <- rnorm(700)
+hist(samp1)
+qqnorm(samp1)
+```
+
+## QQ plots 2
+
+
+```{r}
+samp2 <- rlnorm(700, 0, 0.7)
+hist(samp2)
+qqnorm(samp2)
+```
+
+## QQ plots 3
+
+
+```{r}
+samp3 <- rt(700, df = 3)
+hist(samp3)
+qqnorm(samp3)
+```
+
+
+
