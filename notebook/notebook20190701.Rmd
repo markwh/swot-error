@@ -1,0 +1,106 @@
+---
+title: "notebook20190701"
+author: "Mark Hagemann"
+date: "7/1/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+opts_chunk$set(echo = TRUE)
+```
+
+
+Getting back into things after France and Florida. Manuscript time, big time. Working with validation-objects script. Also, manuscript project. I've gotten some new results since last time I worked on the manuscript, so I'll need to sort things out first. Do I have an outline somewhere? Yes! Simplenote. 
+
+What did we end up varying? I'll need to set up the axes of validation. See Rui's email with Brent.
+
+Looks like there are 18 total runs (plus possibly 6 more due to passes being split over multiple runs). I need now to figure out which run numbers these correspond to. Variables:
+
+- pass
+- day
+- tile
+- refdem
+- land_sig0
+
+constant:
+
+- water_sig0 == "10db"
+- refdem_res == "10m"
+
+See if I can pull this info from the manifest. 
+
+```{r}
+ro_manifest() %>% 
+  mutate(sig0_ref = paste0(refdem, land_sig0)) %>% 
+  filter(water_sig0 == "10dB",
+         refdem_res == "10m",
+         sig0_ref %in% c("GDEM-100dB", "SRTM-5dB")) %>% 
+  group_by(pass, day, tile, refdem, land_sig0) %>% 
+  summarize(n = n()) %>%  
+  # ungroup() %>%
+  # summarize(n = n())
+  kable()
+
+ro_manifest() %>% 
+  mutate(sig0_ref = paste0(refdem, land_sig0)) %>% 
+  filter(water_sig0 == "10dB",
+         refdem_res == "10m",
+         sig0_ref %in% c("GDEM-100dB", "SRTM-5dB"),
+         pass == 264, day == 221, 
+         refdem == "GDEM", land_sig0 == "-100dB")
+
+
+duplicated(ro_manifest()$indir)
+
+length(unique(ro_manifest()$indir))
+
+ro_manifest()$outno
+```
+
+Aha! It's all there--at least to the point that my latest csv is entirely redundant. But do I have all the requisite runs? Count is short.
+
+```{r}
+ro_manifest() %>% 
+  mutate(sig0_ref = paste0(refdem, land_sig0)) %>% 
+  filter(water_sig0 == "10dB",
+         refdem_res == "10m",
+         sig0_ref %in% c("GDEM-100dB", "SRTM-5dB")) %>% 
+  group_by(pass, day) %>% 
+  summarize(n = n()) %>% 
+  kable()
+```
+
+Missing: pass 527, day 119; pass 264, day 110; pass 249, day??
+
+```{r}
+ro_manifest() %>% 
+  filter(day == 119, pass == 527, refdem == "GDEM") %>% 
+  glimpse()
+
+ro_manifest() %>% 
+  filter(day == 110, pass == 264, refdem == "GDEM") %>%
+  glimpse()
+
+ro_manifest() %>% 
+  filter(pass == 249, day == 109, priordb == "$PRIORLOC2", land_sig0 == "-100dB",
+         water_sig0 == "10dB") %>% 
+  glimpse()
+  # group_by(day) %>% 
+  # summarize(n = n())
+```
+
+Ask Rui about:
+
+- 527-119, GDEM, -100dB land
+- 264-110, GDEM, -100dB land
+- 249-109, SRTM
+
+After emailing with Rui and Mike, I'll start with cycles 2 and 3--that's:
+
+- 249: 130 and 220
+- 264: 131 and 221
+- 527: 209, 302
+
+I've got everything re-read in the validation script. That's a good stopping place for today. Tomorrow I'll work on how to present the new axes of validation. Also writing. 
+

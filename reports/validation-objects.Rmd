@@ -16,7 +16,7 @@ Function to put objects into manuscript project subdirectory.
 
 ```{r}
 push2manuscript <- function(object) {
-  objstring <- as_string(enexpr(object))
+  objstring <- rlang::as_string(enexpr(object))
   save(list = objstring, 
        file = sprintf("~/Documents/manuscript-uncval/robjs/%s.RData",
                       objstring))
@@ -32,17 +32,20 @@ push2manuscript(foo)
 Location of validation data, including which directories to use
 
 ```{r}
-varyvars <- c("pass", "day", "gdem_name")
-romatch(54, vary = varyvars)
+# varyvars <- c("pass", "day", "gdem_name")
+# romatch(54, vary = varyvars)
 
-valnums <- 51:54
+valnums <- ro_manifest() %>% 
+  filter(notes == "manuscript") %>% 
+  filter(outno != 74) %>% # Remove this if/when the run is fixed.
+  pull(outno)
 valdirs <- rodir(valnums)
 
 ro_manifest() %>% 
-  filter(outno %in% 51:54)
-valdf_master <- rt_valdata_multi(runnos = 51:54, flag_out_nodes = FALSE) %>% 
+  filter(outno %in% valnums)
+valdf_master <- rt_valdata_multi(runnos = valnums, flag_out_nodes = FALSE) %>% 
   mutate(xtrk_dist = abs(xtrk_dist))
-reachvaldf <- rt_valdata_multi(51:54, group = "reaches")
+reachvaldf <- rt_valdata_multi(valnums, group = "reaches")
 
 push2manuscript(valdf_master)
 
@@ -104,13 +107,9 @@ run_tbl <- pixcvaldf %>%
   group_by(pass) %>% 
   summarize(n_nodes = n()) %>% 
   left_join(rundatedf)
+kable(run_tbl)
 push2manuscript(run_tbl)
 
-
-pixcvaldf %>% 
-  left_join(ro_manifest(), by = c(run = "outno"))
-  group_by(reach_id) %>% 
-  summarize(n_nodes = n(), n_pix = sum(n_good_pix))
 ```
 
 ### Validation results, part 1
@@ -216,25 +215,26 @@ Prior db data
 
 ```{r}
 # ncloc <- path("D:/data/SWOT-prior/PriorDistributionFolder/netcdfV4/", "NA07.nc")
-ncloc <- "~/Documents/swot-error/data/priordb-update/Sac_sample_db14.nc"
+ncloc <- "~/Documents/swot-error/data/priordb-update/Sac_sample_db15.nc"
 
-nodemapdf <- priornode_read(nodecov$node_id, ncloc) %>% 
-  left_join(nodecov, by = "node_id")
+nodemapdf <- priornode_read(ncloc, nodecov$node_id, as_sf = FALSE) %>% 
+  mutate(reach_id = as.factor(reach_id)) %>% 
+  left_join(nodecov, by = c("node_id", "reach_id"))
 ```
 
 
 Map object
 
 ```{r}
-# library(ggmap)
-# allat <- c(passmapdf$latitude, nodemapdf$latitude)
-# allon <- c(passmapdf$longitude, nodemapdf$longitude)
-# pad <- 0.1
-# bbox <- c(min(allon) - pad, min(allat) - pad, 
-#           max(allon) + pad, max(allat) + pad)
-# bgmap <- get_map(location = bbox, maptype = "terrain-background",
-#                  crop = TRUE)
-# satmap <- get_map(location = bbox, maptype = "satellite")
+library(ggmap)
+allat <- c(passmapdf$latitude, nodemapdf$latitude)
+allon <- c(passmapdf$longitude, nodemapdf$longitude)
+pad <- 0.1
+bbox <- c(min(allon) - pad, min(allat) - pad,
+          max(allon) + pad, max(allat) + pad)
+bgmap <- get_map(location = bbox, maptype = "terrain-background",
+                 crop = TRUE)
+satmap <- get_map(location = bbox, maptype = "satellite")
 
 nodemapdf %>% 
   filter(reach_id == 10)
@@ -264,7 +264,7 @@ ggnpxhist <- valdf_master %>%
   ggplot(aes(x = n_good_pix)) +
   # geom_density(aes(color = pass))
   geom_histogram(aes(fill = pass), color = "gray30")
-
+ggnpxhist
 push2manuscript(ggnpxhist)
 ```
 
@@ -301,7 +301,7 @@ push2manuscript(npx_xtk_gg)
 ```{r}
 flowdf_plot <- flowdf %>% 
   filter(date %in% rundates) %>% 
-  left_join(rundatedf, by = "date")
+  left_join(rundatedf, by = c("date", "flow"))
 
 ecdf_gg <- cdfdf %>% 
   ggplot(aes(x = flow, y = cdf)) + 
@@ -309,7 +309,7 @@ ecdf_gg <- cdfdf %>%
   geom_point(aes(color = day), data = flowdf_plot, size = 3) +
   scale_x_log10() +
   annotation_logticks(sides = "b")
-
+ecdf_gg
 push2manuscript(ecdf_gg)
 ```
 
@@ -318,7 +318,7 @@ push2manuscript(ecdf_gg)
 Histograms
 
 ```{r}
-ambiguous_nodes(rodir(51))
+# ambiguous_nodes(rodir(51))
 histgg1 <- rt_val_hist(valdf_master, scale = TRUE, plot = TRUE, 
                        curve = TRUE,
                        vars = valvars)
@@ -334,7 +334,7 @@ histgg1 <- rt_val_hist(valdf_master, scale = TRUE, plot = TRUE,
 #   facet_wrap(~variable, scales = "free") +
 #   stat_function(fun = dnorm, args = list(mean = 0, sd = 1), color = "blue") +
 #   scale_fill_brewer(palette = "Set1")
-
+histgg1
 push2manuscript(histgg1)
 
 # ggplotly(histgg1)
