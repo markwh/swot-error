@@ -2,11 +2,13 @@
 title: "Research Update 20190712"
 author: "Mark Hagemann"
 date: "7/12/2019"
-output: html_document
+output: 
+  ioslides_presentation:
+    incremental: true
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = FALSE)
 
 library(tidyverse)
 library(ggplot2)
@@ -16,6 +18,7 @@ library(ggplot2)
 ## Background
 
 - I'm trying to validate estimates of uncertainty
+  - a different problem to that of validating estimates
 
 
 ```{r}
@@ -37,27 +40,29 @@ plotdf %>%
 ## Model residuals
 
 ```{r}
-plotdf %>% 
-  ggplot(aes(x = index, y = resid)) + 
-  geom_ribbon(aes(ymin = -sig, ymax = sig))
+plotdf %>%
+  ggplot(aes(x = index, y = resid)) +
+  geom_linerange(aes(ymin = -sig, ymax = sig)) +
   geom_point(color = "red")
 
 
-plotdf %>% 
-  ggplot() + 
-  geom_histogram(aes(x = resid), bins = 7)
+# plotdf %>% 
+#   ggplot() + 
+#   geom_histogram(aes(x = resid), bins = 7)
 ```
 
 ## Scaled residuals
 
 ```{r}
-plotdf %>% 
-  ggplot(aes(x = index, y = resid)) + 
-  geom_point()
+plotdf %>%
+  ggplot(aes(x = index, y = resid / sig)) +
+  geom_linerange(aes(ymin = -1, ymax = 1)) +
+  geom_point(color = "red")
 
-plotdf %>% 
-  ggplot() + 
-  geom_histogram(aes(x = resid), bins = 7)
+# 
+# plotdf %>% 
+#   ggplot() + 
+#   geom_histogram(aes(x = resid), bins = 7)
 ```
 
 
@@ -86,6 +91,11 @@ plotdf %>%
 ```{r}
 samp1 <- rnorm(700)
 hist(samp1)
+```
+
+## QQ
+
+```{r}
 qqnorm(samp1)
 ```
 
@@ -95,6 +105,11 @@ qqnorm(samp1)
 ```{r}
 samp2 <- rlnorm(700, 0, 0.7)
 hist(samp2)
+```
+
+## QQ
+
+```{r}
 qqnorm(samp2)
 ```
 
@@ -104,8 +119,25 @@ qqnorm(samp2)
 ```{r}
 samp3 <- rt(700, df = 3)
 hist(samp3)
+```
+
+## QQ
+
+```{r}
 qqnorm(samp3)
 ```
 
 
+## Application: SWOT node area
 
+```{r}
+library(knitr)
+include_graphics("../../fig/qq1_20190712.png")
+```
+
+## Application: SWOT node area
+
+```{r}
+library(knitr)
+include_graphics("../../fig/qq2_20190712.png")
+```

@@ -43,12 +43,12 @@ val_composite_fixed <- rt_valdata("../output/area-error/composite_fixed/",
                                   flag_out_nodes = FALSE)
 val_composite_fixed2 <- rt_valdata("../output/area-error/composite_fixed2/", 
                                   flag_out_nodes = FALSE)
-val_composite_fixed3 <- rt_valdata("../output/area-error/composite_fixed3/", 
+val_composite_fixed3 <- rt_valdata("../output/area-error/composite_fixed4/", 
                                   flag_out_nodes = FALSE)
 
 valdf_full <- list(fix1 = val_composite_fixed, 
                    # fix2 = val_composite_fixed2, 
-                   fix3 = val_composite_fixed3) %>% 
+                   fix3 = val_composite_fixed4) %>% 
   bind_rows(.id = "version") %>% 
   filter(variable == "area_total")
 
@@ -63,6 +63,8 @@ valdf_full_qq %>%
   geom_point() +
   geom_abline(slope = 1, intercept = 0) +
   xlim(-3.5, 3.5) + ylim(-10, 15)
+
+ggsave("../fig/qq2_20190712.png", width = 4, height = 3)
 ```
 
 It's close, but not quite there yet. What's the slope?

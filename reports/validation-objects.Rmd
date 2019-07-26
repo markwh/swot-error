@@ -390,11 +390,8 @@ QQ plots
 ```{r}
 qqgg1 <- valdf_gdem %>%
   mutate(day = as.factor(day)) %>% 
-  dplyr::filter(variable %in% valvars) %>% glimpse() %>% 
-  group_by(variable, day) %>% 
-  mutate(rel_err = pixc_err / sigma_est, 
-         theoretical = qqnorm(rel_err, plot.it = FALSE)$x) %>% 
-  ungroup() %>% glimpse()
+  rt_val_qq(plot = FALSE, vars = valvars, 
+            groupvars = c("variable", "day")) %>% 
   ggplot(aes(x = theoretical, y = rel_err)) + 
   # geom_point(aes(text = node_id, color = day)) +
   geom_point(aes(color = day)) +
