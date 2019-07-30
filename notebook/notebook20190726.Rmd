@@ -1,0 +1,345 @@
+---
+title: "notebook20190726"
+author: "Mark Hagemann"
+date: "7/26/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Yesterday I went in on getting mu values using intermediate simulation files. 
+
+Today: 
+
+- calculate alpha using mu values, updated method, compare to original water fraction
+- Calculate uncertainty using Brent's and my approximations. Compare to original
+- Validate updated estimates and uncertainty approximations
+  - Need to pick values for mu uncertainty
+  
+If I get through all that:
+
+- Start on getting true mu values from other files on Hydro
+
+
+## alpha values, joined to pixel cloud df
+
+```{r}
+classncfile <- path(rodir(65), "intermediate_class_maps_0.nc")
+classnc <- nc_open(classncfile)
+# nc_close(classnc)
+
+devtools::load_all("../../subsetnc")
+
+pixcdf <- pixc_read(path(rodir(65), "pixel_cloud.nc"))
+pixcnc <- nc_open(path(rodir(65), "pixel_cloud.nc"))
+
+rangeinds <- unique(pixcdf$range_index) + 1 # adjust zero-referenced indices
+aziminds <- unique(pixcdf$azimuth_index) + 1 
+
+classnc_ss2 <- nc_subset(classnc, num_pixels %in% rangeinds, num_lines %in% aziminds)
+# nc_close(classnc_ss2)
+# unlink(classnc_ss2$filename)
+
+sapply(classnc$var$water_power$dim, function(x) x$name)
+
+muw <- ncvar_get(classnc_ss2, "water_power")
+
+dimnames(muw) <- list(sort(unique(rangeinds)), sort(unique(aziminds)))
+
+muwdf <- reshape2::melt(muw) %>% 
+  rename(range_index = Var1, azimuth_index = Var2, mu_w = value) %>% 
+  left_join(x = pixcdf, y = ., by = c("range_index", "azimuth_index"))
+
+```
+
+Check that mu_w mimics coherent power for water pixels. 
+
+```{r}
+muwdf %>% 
+  filter(classification == 4) %>%
+  sample_n(1000) %>%
+  ggplot(aes(x = coherent_power, y = mu_w)) +
+  # ggplot(aes(x = log(water_frac), y = mu_w)) + 
+  geom_point()
+```
+
+Not super strong. But something is there. Assume it's good (for now--check with Brent later). On to land. 
+
+
+```{r}
+mul <- ncvar_get(classnc_ss2, "land_power")
+dimnames(mul) <- list(rangeinds, aziminds)
+
+muwldf <- reshape2::melt(mul) %>% 
+  rename(range_index = Var1, azimuth_index = Var2, mu_l = value) %>% 
+  left_join(x = muwdf, y = ., by = c("range_index", "azimuth_index"))
+```
+
+
+That should give me enough to re-estimate water fraction. 
+
+```{r}
+p <- muwldf$coherent_power
+Nl <- muwldf$num_rare_looks
+
+
+wfrac_old <- with(muwldf, (p - mu_l) / (mu_w - mu_l))
+rsamp <- sample(seq_along(wfrac_old), 500)
+
+plot(p[rsamp], muwldf$water_frac[rsamp])
+with(muwldf, plot(mu_l[rsamp], water_frac[rsamp]))
+with(muwldf, cor(mu_l[rsamp], water_frac[rsamp], method = "s"))
+with(muwldf, cor(mu_l[rsamp], water_frac[rsamp], method = "k"))
+with(muwldf, plot(mu_l[rsamp] / (mu_w[rsamp] - mu_l[rsamp]), water_frac[rsamp]))
+with(muwldf, cor(mu_l[rsamp] / (mu_w[rsamp] - mu_l[rsamp]), water_frac[rsamp]), method = "s")
+```
+
+This isn't correlating--I may have indexed the subset wrong. Easy way to check: variables in-common between intermediate product and pixel cloud.
+
+```{r}
+classnc_ss2$var$water_fraction
+```
+
+How about a function to put classnc variables into same dimension as pixcdf?
+
+First, how to keep track of indices? Best way might be to add an additional variable to the original. Alternatively, change units of dimension variables to something that allows them to not be 1:n. I prefer creating a variable. 
+
+- OK, that's done. See how it works.
+
+```{r}
+orig_range <- ncvar_get(classnc_ss2, "num_pixels__")
+orig_azim <- ncvar_get(classnc_ss2, "num_lines__")
+
+head(orig_range)
+length(orig_range)
+length(unique(orig_range))
+length(rangeinds)
+
+plot(rangeinds, unique(orig_range)) # not the same ordering!
+plot(aziminds, unique(orig_azim)) # These look the same. 
+```
+
+Now make that function. 
+
+```{r}
+intermed2pixc <- function(nc_inter, varid, pixcdf, outname = varid) {
+  ranges <- pixcdf$range_index
+  azims <- pixcdf$azimuth_index
+  
+  varray <- ncvar_get(nc_inter, varid = varid, collapse_degen = FALSE)
+  
+  # Check if nc_inter is already subset along range ("num_pixels__") 
+  # and/or azimuth ("num_lines__"). If so, revalue the dimnames 
+  # of the returned array before melting. 
+  
+  rowids <- if (is.null(nc_inter$var[["num_pixels__"]]))
+    1:nrow(varray) else
+      as.vector(ncvar_get(nc_inter, "num_pixels__"))
+  colids <- if (is.null(nc_inter$var[["num_lines__"]]))
+    1:ncol(varray) else
+      as.vector(ncvar_get(nc_inter, "num_lines__"))
+  
+  rownames(varray) <- rowids - 1 # Adjust to match python-based indexing in pixc
+  colnames(varray) <- colids - 1
+  
+  outdf <- setNames(reshape2::melt(varray), 
+                    c("range_index", "azimuth_index", outname)) %>% 
+    mutate(range_index = as.numeric(range_index), 
+           azimuth_index = as.numeric(azimuth_index)) %>% 
+    left_join(x = pixcdf, y = ., by = c("range_index", "azimuth_index"))
+  outdf
+}
+
+foo <- intermed2pixc(classnc_ss2, 
+                     # varid = "classification", 
+                     # outname = "class_inter",
+                     varid = "coherent_power",
+                     outname = "cohpow_inter",
+                     pixcdf = pixcdf)
+
+# sum(foo$class_inter == 1)
+# sum(foo$classification == 1)
+# foo <- intermed2pixc(classnc_ss2, varid = "water_fraction", 
+#                      pixcdf = pixcdf, outname = "wfrac_inter")
+
+foo %>% 
+  # filter(classification == 4) %>%
+  sample_n(1000) %>%
+  # ggplot(aes(x = water_frac, y = wfrac_inter)) +
+  # ggplot(aes(x = log(water_frac), y = mu_w)) + 
+  ggplot(aes(x = coherent_power, y = cohpow_inter)) +
+  geom_point() + 
+  scale_x_log10() + scale_y_log10()
+
+with(foo, summary(water_frac - wfrac_inter))
+```
+
+```{r}
+plot(classnc$dim$num_lines$vals)
+plot(classnc$dim$num_pixels$vals)
+```
+
+Still not matching up! How to check? Go back to full classnc, get a single water_fraction value corresponding to a known (range, azimuth) in the pixcdf. 
+
+```{r}
+pixcdf[1:3, c("range_index", "azimuth_index", "water_frac")]
+
+range(pixcdf$range_index)
+range(pixcdf$azimuth_index)
+classnc$var$water_fraction$size
+
+testfracs <- ncvar_get(classnc, "water_fraction", start = c(1, 1), count = c(-1, -1))
+
+
+which(abs(testfracs - 0.003146059) == min(abs(testfracs - 0.003146059)), arr.ind = TRUE)
+min(abs(testfracs - 0.003146059))
+```
+
+Aha! it's shifted by 1. How peculiar! Perhaps a python zero-indexing thing? Likely, but not worth investigating. Actually, that's a really easy mistake, and easy to fix. Just add 1 to range_index and azimuth_index in pixcdf. Or subtract 1 from row and column names. Need to make that adjustment way up top. 
+
+- OK, easy to fix, but difficult to prescribe solutions for this in the general case. Do I always adjust pixel cloud index variables? Not a good idea. Do I change the way I generate "dimname__" variables in netcdf subset? Also not a good idea, since `nc$dim$vals` counts from 1. Thus I need to deal with it in the join, and in general I *do not* need to deal with it in the expressions provided to `nc_subset()`, since indices aren't provided directly when subsetting (although in this particular case I do, which is fine). 
+
+DONE. At last. Now I can do bullet point 1 from this morning. 
+
+### Water fraction calculation
+
+```{r}
+wfracdf <- intermed2pixc(classnc_ss2, varid = "water_power", 
+                     pixcdf = pixcdf, outname = "mu_w") %>% 
+  intermed2pixc(classnc_ss2, varid = "land_power", 
+                     pixcdf = ., outname = "mu_l")
+
+calcalpha <- function(N, p, mu_w, mu_l) {
+  numer <- (N / (N - 1)) * p  - mu_l
+  numer / (mu_w - mu_l)
+}
+
+wfracdf <- wfracdf %>% 
+  mutate(alpha_new = calcalpha(num_rare_looks, coherent_power, mu_w, mu_l))
+
+head(wfracdf$alpha_new)
+
+wfracdf %>% 
+  sample_n(1000) %>% 
+  ggplot(aes(x = water_frac, y = alpha_new)) + 
+  geom_point() +
+  geom_abline(slope = 1, intercept = 0)
+```
+
+OK, that's fine. Get the uncertainty, then validate. 
+
+### Water fraction uncertainty
+
+
+- old uncertainty (already in the df)
+- new uncertainty--manual
+- new uncertainty--check using simple scaling of old
+- prop uncertainty -- Brent's 
+  - use a dummy cv of 0.5 on mu terms, I guess. 
+- prop uncertainty -- mine
+  - same, cv of 0.5
+  - Later I'll get the uncertainty empirically from the truth mu values. 
+
+```{r}
+
+#' inverse gamma result, as simple scaling
+uncert_scale <- function(sig_alpha) sig_alpha * 1.3804 
+
+uncert_orig <- function(p, emu_l, emu_w, nlooks) {
+  var <- p^2 / ((nlooks) * (emu_w - emu_l)^2)
+  sqrt(var)
+}
+
+uncert_orig = function(p, mu_l, mu_w, nlooks) {
+  var = p^2 / ((nlooks) * (mu_w - mu_l)^2)
+  sqrt(var)
+}
+
+#' inverse gamma result, done out. 
+uncert_ig <- function(p, emu_l, emu_w, nlooks) {
+  var <- nlooks^2 * p^2 / ((nlooks - 1)^2 * (nlooks - 2) * (emu_w - emu_l)^2)
+  sqrt(var)
+}
+
+#' Brent's approximation
+uncert_brent <- function(p, emu_l, emu_w, vmu_l, vmu_w, nlooks) {
+  ealpha <- ((nlooks / (nlooks - 1)) * p  - emu_l) / (emu_w - emu_l)
+  
+  term1 <- nlooks^2 / (vmu_w + vmu_l + (emu_w - emu_l)^2)
+  term2.1 <- p^2 / ((nlooks - 1)^2 * (nlooks - 2))
+  term2.2 <- ealpha^2 * (vmu_w + vmu_l) - vmu_l
+  
+  out <- term1 * (term2.1 + term2.2)
+  sqrt(out) # Return sigma, not sigsq. 
+}
+
+#' My approximation
+uncert_mine <- function(p, emu_l, emu_w, vmu_l, vmu_w, nlooks) {
+  mustar <- emu_w - emu_l
+  sig2star <- vmu_w + vmu_l
+  einvw <- mustar / (mustar^2 - sig2star)
+  vinvw <- einvw^2 * sig2star / (mustar^2 - 2 * sig2star)
+  einvw2 <- vinvw + einvw^2
+  
+  out1 <- (nlooks / (nlooks - 1) * p - emu_l)^2 * vinvw
+  out2 <- vmu_l * einvw2
+  out3 <- nlooks^2 * p^2 / ((nlooks - 1)^2 * (nlooks - 2)) * einvw2
+  
+  out <- sqrt(out1 + out2 + out3)
+  out
+}
+
+```
+
+Put these into the updated pixcdf. 
+
+```{r}
+
+wfracdf <- wfracdf %>% 
+  mutate(sigalpha_o = uncert_orig(coherent_power, emu_l = mu_l, emu_w = mu_w, nlooks = num_rare_looks),
+         sigalpha_s = uncert_scale(water_frac_uncert),
+         sigalpha_i = uncert_ig(coherent_power, emu_l = mu_l, emu_w = mu_w, nlooks = num_rare_looks))
+```
+
+```{r, fig.width = 5, fig.height = 4}
+wfracdf %>% 
+  sample_n(300) %>% 
+  ggplot(aes(y = sigalpha_o, x = water_frac_uncert)) +
+  geom_point() + geom_abline(slope = 1, intercept = 0) + 
+  # ylab("recalculated water_frac_uncert") + 
+  xlab("pixc water_frac_uncert")
+ggsave("../fig/water_frac_uncert_discrepancy.png", width = 5, height = 4)  
+
+wfracdf %>% 
+  sample_n(300) %>% 
+  ggplot(aes(x = sigalpha_o, y = sigalpha_i)) +
+  geom_point() + geom_abline(slope = 1, intercept = 0)
+
+
+wfracdf %>% 
+  sample_n(300) %>% 
+  ggplot(aes(x = water_frac_uncert, y = sigalpha_i)) +
+  geom_point() + geom_abline(slope = 1, intercept = 0)
+```
+
+It looks like the internally calculated water_frac_uncert is larger than what the formula gives. Verified by paper math and reference to Brent's document. Next time: investigate why this is!
+
+What's the slope? 
+
+```{r}
+wfracdf %>% 
+  sample_n(10000) %>% 
+  lm(sigalpha_o ~ water_frac_uncert, data = .) %>% 
+  summary()
+
+1 / 0.7562
+
+wfracdf %>% 
+  sample_n(10000) %>% 
+  lm(sigalpha_i ~ water_frac_uncert, data = .) %>% 
+  summary()
+
+```
+

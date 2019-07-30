@@ -1,0 +1,263 @@
+---
+title: "notebook20190729"
+author: "Mark Hagemann"
+date: "7/29/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+Last time I tried to recreate (and found a strange discrepancy) the pixel cloud reported water fraction uncertainty, using an intermediate product. Toay I reported this discrepancy to Brent, and now I shall plunge forward with getting the "true" land and water powers. 
+
+Referring to Brent's pdf from last week, I need to get:
+
+- $\phi_ref$ from "phase" variable in intermediate_conditioned_refloc_new_0.nc file.
+- $\gamma_t$ and $\phi_t$ from functions of "no noise ifgram imag", "no noise ifgram real",
+"power right", "power left", variables in inf_truth.LeftSwath.nc file. This one is really big, so do some kind of subsetting on the hydro server. 
+- other values from pixel_cloud.nc
+
+```{r}
+list.files(rodir(65))
+```
+
+## Some needed variables from Friday's notebook
+
+```{r}
+# function to get variable from intermediate (2-D) to pixel-cloud (1-D) form
+intermed2pixc <- function(nc_inter, varid, pixcdf, outname = varid) {
+  ranges <- pixcdf$range_index
+  azims <- pixcdf$azimuth_index
+  
+  varray <- ncvar_get(nc_inter, varid = varid, collapse_degen = FALSE)
+  
+  # Check if nc_inter is already subset along range ("num_pixels__") 
+  # and/or azimuth ("num_lines__"). If so, revalue the dimnames 
+  # of the returned array before melting. 
+  
+  rowids <- if (is.null(nc_inter$var[["num_pixels__"]]))
+    1:nrow(varray) else
+      as.vector(ncvar_get(nc_inter, "num_pixels__"))
+  colids <- if (is.null(nc_inter$var[["num_lines__"]]))
+    1:ncol(varray) else
+      as.vector(ncvar_get(nc_inter, "num_lines__"))
+  
+  rownames(varray) <- rowids - 1 # Adjust to match python-based indexing in pixc
+  colnames(varray) <- colids - 1
+  
+  outdf <- setNames(reshape2::melt(varray), 
+                    c("range_index", "azimuth_index", outname)) %>% 
+    mutate(range_index = as.numeric(range_index), 
+           azimuth_index = as.numeric(azimuth_index)) %>% 
+    left_join(x = pixcdf, y = ., by = c("range_index", "azimuth_index"))
+  outdf
+}
+
+pixcdf <- pixc_read(path(rodir(65), "pixel_cloud.nc"))
+rangeinds <- unique(pixcdf$range_index) + 1 # adjust zero-referenced indices
+aziminds <- unique(pixcdf$azimuth_index) + 1 
+
+
+```
+
+
+## Values from intermediate_conditioned_refloc_new_0.nc
+
+```{r}
+reflocnc <- nc_open(path(rodir(65), "intermediate_conditioned_refloc_new_0.nc"))
+names(reflocnc$dim)
+reflocnc_ss <- nc_subset(reflocnc, num_pixels %in% rangeinds, num_lines %in% aziminds)
+
+```
+
+Nice, this has same dimensions as the other intermediate file, so I may be able to use the same function as last time to get the variables in the form I need. 
+
+```{r}
+phasevardf <- intermed2pixc(reflocnc_ss, "phase", pixcdf, outname = "phase")
+glimpse(phasevardf)
+
+
+randrow <- sample_n(phasevardf, 1)
+phasevardf %>% 
+  filter(range_index %in% (randrow$range_index + -30:30), 
+         azimuth_index %in% (randrow$azimuth_index + -30:30)) %>% 
+  glimpse() %>% 
+  ggplot(aes(x = range_index, y = azimuth_index, fill = phase)) + 
+  geom_raster()
+  
+```
+
+Neat. So I have the reference phase. Next steps are maybe going to be difficult. 
+
+## Variables from inf_truth file
+
+Get on hydro and:
+
+- locate the inf_truth... file for this run
+  - Make a symlink to it DONE.
+- scope out its structure
+
+I'm finding I need to do this in python, since there is no R on the hydro server. 
+
+- use `numpy.apply_along_axis` with downsampling-averaging function. 
+  - Prototype in R, then migrate to python
+
+
+### downsampling-averaging function
+
+```{r}
+x <- rnorm(100)
+x <- 1:100
+n <- 3
+offset <- 0
+
+ds_avg <- function(x, n = 3, offset = 0) {
+  stopifnot(length(x) > n)
+  x <- x[(offset + 1):length(x)]
+  
+  out <- cumsum(x)
+  out[(n + 1):length(x)] <- out[(n + 1):length(x)] - out[1:(length(x) - n)]
+  out <- (out[n:length(out)] / n)[seq(1, length(out), by = n)]
+  out
+}
+```
+
+Eh, I'll scrap this approach and do it in pandas. 
+
+
+- convert the np.array to pandas DataFrame. DONE
+  - nrow is not a multiple of 7--remainder is 6. Take off 6 rows from some combo of beggining and/or end.
+- make a group variable like `rep(1, nrow(df), each = 7)`
+
+
+Make a python function.
+
+```{python}
+import numpy as np
+import pandas as pd
+def agg_df(df, n, offset = 0):
+  # trim df to have rows that are a multiple of n
+  # print(df)
+  # print(offset)
+  df = df.iloc[int(offset): ,]
+  # print(df)
+  trimno = df.shape[0] % n
+  # print(trimno)
+  if trimno > 0:
+    df = df.iloc[:-trimno, ]
+  aggvar = np.repeat(range(int(df.shape[0] / n)), n)
+  df['agg_var'] = aggvar
+  #
+  # # Group by operation
+  out = df.groupby('agg_var').apply(np.mean)
+  return(out)
+
+mtcardf = pd.DataFrame(r.mtcars)
+
+testagg1 = agg_df(mtcardf, 5, offset = 3)
+testagg1
+# testagg1
+```
+
+That appears to work. Next, get this with offsets 0:6 (7 would wrap), and repeat for the variables: 
+
+- no_noise_ifgram_imag
+- no_noise_ifgram_real
+
+Put these commands in a code chunk to copy/paste into terminal. 
+
+```{python}
+import netCDF4 as nc4
+import numpy as np
+import pandas as pd
+
+
+ds1 = nc4.Dataset('./inf_truth.LeftSwath.nc')
+
+# var1 = ds1.get_variables_by_attributes(name='no_noise_ifgram_imag')[0]
+var1 = ds1.get_variables_by_attributes(name='classification')[0]
+val1 = np.array(var1)
+df1 = pd.DataFrame(val1)
+
+for i in range(7):
+  print(i)
+  dfi_agg = agg_df(df1, 7, offset = i)
+  filei = "classif" + str(i) + ".pkl"
+  print(filei)
+  dfi_agg.to_pickle(filei)
+
+```
+
+The aggregated data frame has the correct number of columns, but it has an extra 27 or so rows. Try doing a ccf to get the correct offset, both pre- and post-aggregation for a variable in both the pixel_cloud and the inf_truth aggregated data.frame. 
+
+- Use `height`, I guess? 
+- transfer a binary file (use `pickle`)
+
+
+```{python}
+import pickle
+import pandas as pd
+
+df1 = pd.read_pickle('../output/area-error/heightdata0.pkl') 
+df1
+# df1.shape
+```
+
+```{r}
+library(reticulate)
+
+foo <- py$df1
+
+foo[foo == foo[1,1]] <- NA
+min(foo, na.rm = TRUE)
+```
+
+Missing values are messing things up. How to deal with these when aggregating? 
+
+```{r}
+height_pixc <- pixcdf %>% 
+  select(height, range_index, azimuth_index) %>% 
+  reshape2::acast(range_index ~ azimuth_index, value.var = "height")
+
+dim(height_pixc)
+```
+
+Also, how to make sure I'm doing the right comparison to pixc? 
+
+Try with classification instead of height--that way I can compare to classnc variables, don't have to go to pixel cloud. 
+
+```{r}
+classclass <- ncvar_get(classnc, "classification")
+pryr::object_size(classclass)
+
+colsums <- apply(classclass, 2, sum)
+which(colsums > 0)
+
+rowsums <- apply(classclass, 1, sum)
+which(rowsums > 0)
+
+pklread <- import("pandas")$read_pickle
+
+pklclass <- pklread("../output/area-error/classif2.pkl")
+pklclass[pklclass < 0] <- 0
+
+colsums_pkl <- apply(pklclass, 2, sum)
+which(colsums_pkl > 0)
+
+rowsums_pkl <- apply(pklclass, 1, sum)
+
+```
+
+Compare classnc classification to pickle classification
+
+```{r}
+sum(colsums > 0)
+sum(colsums_pkl > 0)
+
+sum(rowsums > 0)
+sum(rowsums_pkl > 0)
+
+```
+

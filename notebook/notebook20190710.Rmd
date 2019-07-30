@@ -1,0 +1,77 @@
+---
+title: "notebook20190710"
+author: "Mark Hagemann"
+date: "7/10/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+I discovered this morning a probable error in water fraction uncertainty calculation. It's easy to fix--I just need to multiply the 1-sigma uncertainty by $\sqrt{N_l^3 (N_l -1 )^{-2}(N_l - 1)^{-1}}$. For me ($N_l = 7$) that comes out to 1.3804. 
+
+I'll bring this up with Brent, but first I'm going to try patching the pixel cloud and rerunning through riverobs. See how that affects the validation.
+
+```{r}
+file.copy("../output/area-error/pixel_cloud.nc", 
+          "../output/area-error/pixel_cloud_fixed.nc")
+new_pixc <- nc_open("../output/area-error/pixel_cloud_fixed.nc", write = TRUE)
+wfrac_unc <- ncvar_get(new_pixc, "pixel_cloud/water_frac_uncert")
+new_wfrac_unc <- wfrac_unc * 1.3804
+
+ncvar_put(new_pixc, "pixel_cloud/water_frac_uncert", new_wfrac_unc)
+nc_close(new_pixc)
+
+pixc_old <- pixc_read("../output/area-error/pixel_cloud.nc")
+pixc_new <- pixc_read("../output/area-error/pixel_cloud_fixed.nc")
+
+toplot <- sample(1:nrow(pixc_old), 200)
+plot(pixc_old$water_frac_uncert[toplot], pixc_new$water_frac_uncert[toplot]); abline(0, 1)
+
+```
+
+Good, now rerun riverobs.
+
+Here are the results I get. Some improvement--I'll need to quantify this. 
+
+```{r}
+val_simple <- rt_valdata("../output/area-error/simple/", flag_out_nodes = FALSE)
+val_composite <- rt_valdata("../output/area-error/composite/", flag_out_nodes = FALSE)
+
+val_composite_fixed <- rt_valdata("../output/area-error/composite_fixed/", 
+                                  flag_out_nodes = FALSE)
+
+val_composite %>% 
+  dplyr::filter(variable == "area_total") %>%
+  mutate(scaled_error = pixc_err / sigma_est, 
+         theoretical = qqnorm(scaled_error, plot.it = FALSE)$x) %>% 
+  ggplot(aes(x = theoretical, y = scaled_error)) + 
+  geom_point() +
+  geom_abline(slope = 1, intercept = 0) +
+  xlim(-3.5, 3.5) + ylim(-10, 15)
+  
+
+# ggsave("../fig/area-error-composite.png")
+
+val_composite_fixed %>% 
+  dplyr::filter(variable == "area_total") %>%
+  mutate(scaled_error = pixc_err / sigma_est, 
+         theoretical = qqnorm(scaled_error, plot.it = FALSE)$x) %>% 
+  ggplot(aes(x = theoretical, y = scaled_error)) + 
+  geom_point() +
+  geom_abline(slope = 1, intercept = 0) +
+  xlim(-3.5, 3.5) + ylim(-10, 15)
+
+val_composite_fixed %>% 
+  rt_val_hist(scale = TRUE, curve = TRUE, vars = "area_total") + 
+  xlim(-13, 15) + ylim(0, 0.42)
+val_composite %>% 
+  rt_val_hist(scale = TRUE, curve = TRUE, vars = "area_total") +
+  xlim(-13, 15) + ylim(0, 0.42)
+
+```
+
+Put this into a report and send to Brent.
+
+

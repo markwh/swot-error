@@ -20,6 +20,7 @@ push2manuscript <- function(object) {
   save(list = objstring, 
        file = sprintf("~/Documents/manuscript-uncval/robjs/%s.RData",
                       objstring))
+  if (inherits(object, "gg")) print(object)
 }
 foo <- "abc"
 push2manuscript(foo)
@@ -37,7 +38,7 @@ Location of validation data, including which directories to use
 
 valnums <- ro_manifest() %>% 
   filter(notes == "manuscript") %>% 
-  filter(outno != 74) %>% # Remove this if/when the run is fixed.
+  filter(outno != 74, outno != 87) %>% # Remove this if/when the run is fixed.
   pull(outno)
 valdirs <- rodir(valnums)
 
@@ -45,6 +46,8 @@ ro_manifest() %>%
   filter(outno %in% valnums)
 valdf_master <- rt_valdata_multi(runnos = valnums, flag_out_nodes = FALSE) %>% 
   mutate(xtrk_dist = abs(xtrk_dist))
+valdf_gdem <- valdf_master %>% filter(refdem == "GDEM")
+valdf_srtm <- valdf_master %>% filter(refdem == "SRTM")
 reachvaldf <- rt_valdata_multi(valnums, group = "reaches")
 
 push2manuscript(valdf_master)
@@ -115,7 +118,8 @@ push2manuscript(run_tbl)
 ### Validation results, part 1
 
 ```{r}
-valvars <- c("height", "height2", "slope", "width", "area_total")
+# valvars <- c("height", "height2", "slope", "width", "area_total")
+valvars <- c("wse", "slope", "width", "area_total")
 ```
 
 Summary stats
@@ -135,7 +139,7 @@ kable(sumstatdf, digits = 2)
 Coverage stats
 
 ```{r}
-covdf <- valdf_master %>% 
+covdf <- valdf_gdem %>% 
   dplyr::filter(variable %in% valvars) %>% 
   val_coverage()
 
@@ -146,11 +150,11 @@ push2manuscript(covdf)
 Hypothesis tests
 
 ```{r}
-node_ht <- valdf_master %>% 
+node_ht <- valdf_gdem %>% 
   dplyr::filter(variable %in% valvars) %>% 
   rt_hyptest(sides = 2)
 
-node_ht_db <- valdf_master %>% 
+node_ht_db <- valdf_gdem %>% 
   dplyr::filter(variable %in% valvars) %>% 
   rt_hyptest(debias = TRUE)
 
@@ -163,11 +167,11 @@ push2manuscript(node_ht)
 Hypothesis test--subset
 
 ```{r}
-node_htsset <- valdf_master %>% 
+node_htsset <- valdf_gdem %>% 
   dplyr::filter(day != 220, variable %in% valvars) %>% 
   rt_hyptest(sides = 2)
 
-node_htsset_db <- valdf_master %>% 
+node_htsset_db <- valdf_gdem %>% 
   dplyr::filter(day != 220, variable %in% valvars) %>% 
   rt_hyptest(debias = TRUE)
 
@@ -203,7 +207,7 @@ passmapdf <- paste0(valdirs, "/pixel_cloud.nc") %>%
   left_join(ro_manifest(), by = "outno")
 
 # Number of times each node is observed across validation data.
-nodecov <- valdf_master %>% 
+nodecov <- valdf_gdem %>% 
   mutate(reach_id = as.factor(reach_id)) %>% 
   filter(variable == "latitude") %>% 
   group_by(node_id, reach_id) %>% 
@@ -251,25 +255,33 @@ map_gg <- ggmap(bgmap, darken = c(0.4, "white")) +
   # scale_color_hue(l = 70)
   # scale_color_viridis_d(begin = .2, end = 0.7)
   scale_color_brewer(palette = "Paired")
-map_gg
 push2manuscript(map_gg)
 ```
 
 ### Distributions of validation axes variables
 
 ```{r}
-ggnpxhist <- valdf_master %>% 
+ggnpxhist <- valdf_gdem %>% 
   filter(variable == "latitude") %>% 
   mutate(pass = as.factor(pass)) %>% 
   ggplot(aes(x = n_good_pix)) +
   # geom_density(aes(color = pass))
   geom_histogram(aes(fill = pass), color = "gray30")
 ggnpxhist
+
+ggnpxviol <- valdf_gdem %>% 
+  filter(variable == "latitude") %>% 
+  mutate(pass = as.factor(pass)) %>% 
+  ggplot(aes(x = pass, y = n_good_pix)) +
+  geom_violin()
+
+ggnpxviol
+ggnpxhist
 push2manuscript(ggnpxhist)
 ```
 
 ```{r}
-ggxtkhist <- valdf_master %>% 
+ggxtkhist <- valdf_gdem %>% 
   filter(variable == "latitude") %>% 
   mutate(pass = as.factor(pass)) %>% 
   ggplot(aes(x = xtrk_dist, fill = pass)) +
@@ -281,7 +293,7 @@ ggxtkhist
 
 ```{r}
 
-npx_xtk_gg <- valdf_master %>% 
+npx_xtk_gg <- valdf_gdem %>% 
   filter(variable == "latitude") %>% 
   mutate(pass = as.factor(pass), 
          shape = as.numeric(pass) + 20) %>% 
@@ -308,7 +320,8 @@ ecdf_gg <- cdfdf %>%
   geom_line() + 
   geom_point(aes(color = day), data = flowdf_plot, size = 3) +
   scale_x_log10() +
-  annotation_logticks(sides = "b")
+  annotation_logticks(sides = "l")
+  # coord_flip()
 ecdf_gg
 push2manuscript(ecdf_gg)
 ```
@@ -319,7 +332,13 @@ Histograms
 
 ```{r}
 # ambiguous_nodes(rodir(51))
-histgg1 <- rt_val_hist(valdf_master, scale = TRUE, plot = TRUE, 
+histgg1 <- valdf_gdem %>% 
+  rt_val_hist(scale = TRUE, plot = TRUE, 
+                       curve = TRUE,
+                       vars = valvars)
+
+histgg2 <- valdf_srtm %>% 
+  rt_val_hist(scale = TRUE, plot = TRUE, 
                        curve = TRUE,
                        vars = valvars)
 # histdf <- rt_val_hist(valdf_master, scale = TRUE, plot = FALSE)
@@ -335,10 +354,25 @@ histgg1 <- rt_val_hist(valdf_master, scale = TRUE, plot = TRUE,
 #   stat_function(fun = dnorm, args = list(mean = 0, sd = 1), color = "blue") +
 #   scale_fill_brewer(palette = "Set1")
 histgg1
+histgg2
 push2manuscript(histgg1)
+push2manuscript(histgg2)
 
 # ggplotly(histgg1)
 ```
+
+
+```{r violin-plots}
+valdf_gdem %>% 
+  # glimpse() %>%
+  filter(variable %in% valvars) %>% 
+  transmute(reach_id, node_id, variable = as.factor(variable),
+            pass = as.factor(pass), day, 
+            scaled_error = pixc_err / sigma_est) %>% 
+  ggplot(aes(x = variable, fill = pass, y = scaled_error)) + 
+  geom_violin(position = position_dodge(0.5))
+```
+
 
 Node-area plots for bad nodes
 
@@ -354,7 +388,18 @@ nodearea_plot(pixc_joined = join_pixc(rodir(18)), nodes = badnodes,
 QQ plots
 
 ```{r}
-qqgg1 <- valdf_master %>%
+qqgg1 <- valdf_gdem %>%
+  mutate(day = as.factor(day)) %>% 
+  rt_val_qq(plot = FALSE, vars = valvars, 
+            groupvars = c("variable", "day")) %>% 
+  ggplot(aes(x = theoretical, y = rel_err)) + 
+  # geom_point(aes(text = node_id, color = day)) +
+  geom_point(aes(color = day)) +
+  facet_wrap(~variable, scales = "free_y") +
+  geom_abline(slope = 1, intercept = 0) +
+  scale_color_brewer(palette = "Set1")
+
+qqgg2 <- valdf_srtm %>%
   mutate(day = as.factor(day)) %>% 
   dplyr::filter(variable %in% valvars) %>% glimpse() %>% 
   group_by(variable, day) %>% 
@@ -367,7 +412,9 @@ qqgg1 <- valdf_master %>%
   geom_abline(slope = 1, intercept = 0) +
   scale_color_brewer(palette = "Set1")
 
+
 qqgg1
+qqgg2
 push2manuscript(qqgg1)
 # ggplotly(qqgg1, tooltip = "text")
 ```
@@ -375,13 +422,13 @@ push2manuscript(qqgg1)
 Scatterplot
 
 ```{r}
-scattergg1 <- valdf_master %>% 
+scattergg1 <- valdf_gdem %>% 
   mutate(day = as.factor(day)) %>% 
   rt_val_scatter(variables = valvars, yvar = "relerr", plot = FALSE) %>% 
   ggplot(aes(x = xval, y = yval)) +
   # Add ribbons
-  geom_ribbon(ymin = -1.96, ymax = 1.96, fill = "#dddddd") +
-  geom_ribbon(ymin = -1, ymax = 1, fill = "#aaaaaa") +
+  geom_ribbon(aes(ymin = -1.96, ymax = 1.96), fill = "#dddddd") +
+  geom_ribbon(aes(ymin = -1, ymax = 1), fill = "#aaaaaa") +
   # add points
   geom_point(aes(color = day), alpha = 0.6) +
     facet_wrap(~variable, scales = "free") +
@@ -398,7 +445,7 @@ scattergg1
 Scatterplots against npixc, xtk dist
 
 ```{r}
-errggdf <- valdf_master %>% 
+errggdf <- valdf_gdem %>% 
   # filter(variable == "height") %>% 
   filter(variable %in% valvars) %>% 
   mutate(scaled_err = pixc_err / sigma_est,
@@ -411,11 +458,13 @@ err_gg1 <- errggdf %>%
   filter(node_id != 438) %>% 
   ggplot(aes(x = value, color = pass)) +
   facet_grid(variable ~ what, scales = "free") +
-  geom_point(aes(y = pixc_err))
-
+  geom_point(aes(y = pixc_err), alpha = 0.25)
+err_gg1
 push2manuscript(err_gg1)
+```
 
-uncggdf <- valdf_master %>% 
+```{r}
+uncggdf <- valdf_gdem %>% 
   # filter(variable == "height") %>% 
   filter(variable %in% valvars) %>% 
   mutate(xtrk_dist = abs(xtrk_dist),
@@ -427,13 +476,16 @@ uncggdf <- valdf_master %>%
   gather(key = "what", value = "value", -run:-sigma_est)
 unc_gg1 <- ggplot(uncggdf, aes(x = value, color = pass)) +
   facet_grid(variable ~ what, scales = "free") +
-  geom_point(aes(y = sigma_est)) +
+  geom_point(aes(y = sigma_est), alpha = 0.25) +
   scale_y_log10() +
   # scale_x_log10() +
   annotation_logticks(sides = "l")
+unc_gg1
 push2manuscript(unc_gg1)
+```
 
-scalerrggdf <- valdf_master %>% 
+```{r}
+scalerrggdf <- valdf_gdem %>% 
   # filter(variable == "height") %>% 
   filter(variable %in% valvars) %>% 
   mutate(xtrk_dist = abs(xtrk_dist),
@@ -449,31 +501,58 @@ scalerrggdf <- valdf_master %>%
   gather(key = "what", value = "value", -run:-scaled_err)
 scalerr_gg1 <- ggplot(scalerrggdf, aes(x = value, color = pass)) +
   facet_grid(variable ~ what, scales = "free") +
-  geom_point(aes(y = scaled_err))
-
+  geom_point(aes(y = scaled_err), alpha = 0.25)
+scalerr_gg1
 push2manuscript(scalerr_gg1)
 
 ```
 
-Pairs plots by node
+Trying a different way, separating n_good_pix from xtrk_dist
 
 ```{r}
-pairdf <- valdf_master %>% 
-  filter(variable == "area_total") %>% 
-  mutate(relerr = pixc_err / sigma_est) %>% 
-  select(pass, node_id, variable, reach_id, relerr) %>% 
-  # `[`(c(1, 699), ) %>% glimpse()
-  spread(key = pass, value = relerr) %>% 
-  glimpse()
+goodpixdf <- valdf_gdem %>% 
+  filter(variable %in% valvars) %>% 
+  mutate(xtrk_dist = abs(xtrk_dist),
+         scaled_err = pixc_err / sigma_est,
+         pass = as.factor(pass)) %>% 
+  select(run, pass, day, node_id, reach_id, variable,
+         n_good_pix,
+         pixc_err, sigma_est, scaled_err) %>% 
+  gather(key = "what", value = "value", -run:-n_good_pix)
 
-summary(pairdf)
+glimpse(goodpixdf)
 
-pairdf %>% 
-  select(-node_id:-reach_id) %>% 
-  ggpairs()
+goodpix_gg1 <- ggplot(goodpixdf, aes(x = n_good_pix, color = pass)) +
+  facet_wrap(what ~ variable, scales = "free_y") +
+  geom_point(aes(y = value), alpha = 0.25) +
+  scale_x_log10()
+goodpix_gg1
+
 ```
 
-Nothing remarkable there. 
+
+
+
+### Flow condition
+
+Can I do a violin plot?
+
+```{r flow-cond-violin}
+valdf_gdem %>% 
+  filter(variable %in% valvars) %>% 
+  mutate(scaled_error = pixc_err / sigma_est,
+         pass = as.factor(pass), 
+         date = lubridate::ymd(sprintf("2009%04d", day))) %>%
+  left_join(flowdf, by = "date") %>% 
+  ggplot(aes(x = flow, y = scaled_error)) + 
+  geom_point(aes(color = pass, group = pass), 
+             # position = position_jitterdodge(jitter.width = 0.01, dodge.width = 0.005), 
+             alpha = 0.2) + 
+  facet_wrap(~variable, scales = "free_y") +
+  scale_x_log10() + annotation_logticks(sides = "b")
+  geom_violin()
+```
+
 
 
 ## Reach data
@@ -486,16 +565,17 @@ reach_gg1 <- reachvaldf %>%
   rt_val_scatter(variables = valvars, yvar = "relerr", plot = FALSE) %>% 
   ggplot(aes(x = xval)) +
   # Add ribbons
-  geom_ribbon(ymin = -1.96, ymax = 1.96, fill = "#dddddd") +
-  geom_ribbon(ymin = -1, ymax = 1, fill = "#aaaaaa") +
+  geom_ribbon(aes(ymin = -1.96, ymax = 1.96), fill = "#dddddd") +
+  geom_ribbon(aes(ymin = -1, ymax = 1), fill = "#aaaaaa") +
   # add points
   geom_point(aes(color = pass, y = yval), alpha = 0.6) +
   geom_point(aes(color = pass, y = -yval), alpha = 0) +
-  geom_line(aes(color = pass, y = yval), alpha = 0.6) +
+  # geom_line(aes(color = pass, y = yval, group = day), alpha = 0.6) +
   facet_wrap(~variable, scales = "free") +
   ylab("Scaled Error") + xlab("Reach ID") +
   scale_color_brewer(palette = "Set1") +
   theme(legend.position = "bottom")
+
 push2manuscript(reach_gg1)
 ```
 

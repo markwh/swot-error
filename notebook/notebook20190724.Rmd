@@ -1,0 +1,63 @@
+---
+title: "notebook20190724"
+author: "Mark Hagemann"
+date: "7/24/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Try out the uncertainty expressions derived by Brent and me. 
+
+Workflow:
+
+- calculate uncertainty
+- put that into pixc under `water_frac_uncert`.
+
+```{r}
+uncert_brent <- function(p, emu_l, emu_w, vmu_l, vmu_w, nlooks) {
+  ealpha <- ((nlooks / (nlooks - 1)) * p  - emu_l) / (emu_w - emu_l)
+  
+  term1 <- nlooks^2 / (vmu_w + vmu_l + (emu_w - emu_l)^2)
+  term2.1 <- p^2 / ((nlooks - 1)^2 * (nlooks - 2))
+  term2.2 <- ealpha^2 * (vmu_w + vmu_l) - vmu_l
+  
+  out <- term1 * (term2.1 + term2.2)
+  out
+}
+
+```
+
+Can I actually calculate this though?
+
+```{r}
+pixcnc <- nc_open("../output/74/pixel_cloud.nc")
+pixcnc$var$`pixel_cloud/coherent_power`$longname
+pixcnc$var$`pixel_cloud/power_minus_y`$longname
+```
+
+- Nope, missing `emu_l`, `emu_w`, `vmu_l`, `vmu_w`
+- Could maybe get from sigma0? Is this equivalent to sigma0? 
+
+```{r}
+dB2watt <- function(dB, refwatt = 0.001) {
+  out <- refwatt * 10^(dB / 10)
+  out
+}
+
+sig02watt <- function(sig0, pnoise, xfact) {
+  out <- sig0 * xfactr - pnoise
+}
+
+pnoise1 <- ncvar_get(pixcnc, "noise/noise_plus_y")
+pnoise2 <- ncvar_get(pixcnc, "noise/noise_minus_y")
+
+xfac1 <- ncvar_get(pixcnc, "pixel_cloud/x_factor_plus_y")
+summary(xfac1)
+xfac2 <- ncvar_get(pixcnc, "x_factor_minus_y")
+```
+
+Noise is constant at 2.067e-12. 
+

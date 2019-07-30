@@ -1,0 +1,118 @@
+---
+title: "notebook20190711"
+author: "Mark Hagemann"
+date: "7/11/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Continuing with simulation modifications. 
+
+```{r}
+file.copy("../output/area-error/pixel_cloud.nc", 
+          "../output/area-error/pixel_cloud_fixed2.nc")
+new_pixc <- nc_open("../output/area-error/pixel_cloud_fixed2.nc", write = TRUE)
+wfrac_unc <- ncvar_get(new_pixc, "pixel_cloud/water_frac_uncert")
+new_wfrac_unc <- wfrac_unc * 1.7
+
+ncvar_put(new_pixc, "pixel_cloud/water_frac_uncert", new_wfrac_unc)
+nc_close(new_pixc)
+
+```
+
+Again, using factor of 2
+
+```{r}
+file.copy("../output/area-error/pixel_cloud.nc", 
+          "../output/area-error/pixel_cloud_fixed3.nc")
+new_pixc <- nc_open("../output/area-error/pixel_cloud_fixed3.nc", write = TRUE)
+wfrac_unc <- ncvar_get(new_pixc, "pixel_cloud/water_frac_uncert")
+new_wfrac_unc <- wfrac_unc * 2
+
+ncvar_put(new_pixc, "pixel_cloud/water_frac_uncert", new_wfrac_unc)
+nc_close(new_pixc)
+
+```
+
+```{r}
+
+val_composite_fixed <- rt_valdata("../output/area-error/composite_fixed/", 
+                                  flag_out_nodes = FALSE)
+val_composite_fixed2 <- rt_valdata("../output/area-error/composite_fixed2/", 
+                                  flag_out_nodes = FALSE)
+val_composite_fixed3 <- rt_valdata("../output/area-error/composite_fixed4/", 
+                                  flag_out_nodes = FALSE)
+
+valdf_full <- list(fix1 = val_composite_fixed, 
+                   # fix2 = val_composite_fixed2, 
+                   fix3 = val_composite_fixed4) %>% 
+  bind_rows(.id = "version") %>% 
+  filter(variable == "area_total")
+
+valdf_full_qq <- valdf_full %>% 
+  group_by(version) %>% 
+  mutate(scaled_error = pixc_err / sigma_est, 
+         theoretical = qqnorm(scaled_error, plot.it = FALSE)$x) %>% 
+  ungroup()
+
+valdf_full_qq %>% 
+  ggplot(aes(x = theoretical, y = scaled_error, color = version, shape = version)) + 
+  geom_point() +
+  geom_abline(slope = 1, intercept = 0) +
+  xlim(-3.5, 3.5) + ylim(-10, 15)
+
+ggsave("../fig/qq2_20190712.png", width = 4, height = 3)
+```
+
+It's close, but not quite there yet. What's the slope?
+
+```{r}
+valdf_full_qq %>% 
+  filter(theoretical < 1, theoretical > -2) %>% 
+  group_by(version) %>% 
+  summarize(sigx = sd(theoretical), sigy = sd(scaled_error),
+            slope = sigy / sigx)
+```
+
+1.07--that's close. Can I get the rest of the way if I change to 2.1?
+
+
+
+```{r}
+file.copy("../output/area-error/pixel_cloud.nc", 
+          "../output/area-error/pixel_cloud_fixed4.nc")
+new_pixc <- nc_open("../output/area-error/pixel_cloud_fixed4.nc", write = TRUE)
+wfrac_unc <- ncvar_get(new_pixc, "pixel_cloud/water_frac_uncert")
+new_wfrac_unc <- wfrac_unc * 2.1
+
+ncvar_put(new_pixc, "pixel_cloud/water_frac_uncert", new_wfrac_unc)
+nc_close(new_pixc)
+
+```
+
+Read in and check slope. 
+
+```{r}
+val_composite_fixed4 <- rt_valdata("../output/area-error/composite_fixed4/", 
+                                  flag_out_nodes = FALSE)
+
+val_composite_fixed4 %>% 
+  filter(variable == "area_total") %>% 
+  mutate(scaled_error = pixc_err / sigma_est, 
+         theoretical = qqnorm(scaled_error, plot.it = FALSE)$x) %>% 
+  filter(theoretical < 1.5, theoretical > -2) %>% 
+  summarize(sigx = sd(theoretical), sigy = sd(scaled_error),
+            slope = sigy / sigx)
+```
+
+Almost! So I'll call it good at 2.15.
+
+
+On to the next thing. That's getting the new riverobs runs validated. 
+
+### RiverObs validations--cycle 4
+
+

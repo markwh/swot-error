@@ -1,0 +1,69 @@
+---
+title: "notebook20190715"
+author: "Mark Hagemann"
+date: "7/15/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Back at work on the manuscript, using new results from Rui. Now I need to decide what to do about the updated riverobs fields. I'm thinking now to have a toggle or a way to pass in variables. Either that or an automatic detection of fields present. Looking now at rivertile/R/validate.R. 
+
+- Turns out that the renaming of height to "wse" still preserves both methods of height uncertainty estimation. Look at `SWOTRiverEstimator/process_node()`. Unless height_agg is "orig", both wse_u and wse_std are returned, corresponding to the 2 methods of estimation. 
+- Suggests there's no need for using an old version of RiverObs. I can just use the latest and make a fake "wse2" variable or "wse_std" variable. 
+- I still think I should be able to run rivertile on old versions of riverobs output. However, note that with each update to river product variables, multiple specifications need to be updated in `rt_valdata_df()`:
+  - `commonvars_rch`
+  - `commonvars_nod`
+  - `varnames`
+  - `uncnames`
+  
+- It may be worth writing a utility to redo riverobs runs and stamp (somewhere) the version used to generate the output. 
+  - I see this being rather difficult unless it's just about as basic as running `swot_pixc2rivertile.py` from the command line. 
+- I could use [internal data](https://r-pkgs.org/data.html#data-sysdata) to store vectors for several versions of riverobs, then have an argument for which version's vectors to use. 
+  - make a `data-raw` folder that calls `usethis::use_data(..., internal = TRUE)`
+  - Don't even need to get this complicated, since I'm just dealing with a few vectors. Just put them in the function body!
+- Now I'm finding that there are more places that I'd need to change the code. 
+- Also, I did need to make a modification to riverobs: only wse_r_u gets put into the ncdf. 
+  - So I should make a simple ~~python~~ shell script for rerunning output. 
+    - activate RiverObs environment
+    - reference bin/ directory
+    - write a rdf file
+
+
+OK, finished making the shell script and currently using it to remake the latest set of riverobs runs. Make sure they're behaving as expected.
+
+- nodes are getting flagged
+- validations look familiar
+
+```{r}
+testdir <- "D:/data/riverobs-output/sacruns_20190709/84/"
+
+foo1 <- rt_valdata(testdir, flag_out_nodes = FALSE)
+foo2 <- rt_valdata(testdir)
+foo_orig <- rt_valdata(rodir(84))
+
+setdiff(foo1$node_id, foo2$node_id)
+
+
+rt_val_hist(foo1, vars = c("wse", "width"), scale = TRUE, curve = TRUE)
+rt_val_hist(foo2, vars = c("wse", "width"), scale = TRUE, curve = TRUE)
+rt_val_hist(foo_orig, vars = c("wse", "width"), scale = TRUE, curve = TRUE)
+
+```
+
+  
+- I call that a success. Next: put that qqplot I love so much into a function.
+  - OK, I'm relatively happy with that, but have yet to test some features (pending rerun completion)
+- Next, do I want to work on adding riverobs running functionality to rivertile package? 
+  - How would that look? 
+  - Need to point to a prior db (how to do elegantly?)
+    - `set_ro_priordb()` via `options()`
+    - 
+  - on-the-fly writing, modification of config file (pretty easy)
+  
+```{r}
+rt_rivertile <- function(pixcfile, )
+```
+
