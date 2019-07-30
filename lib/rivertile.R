@@ -50,7 +50,7 @@ rt_val_qq <- function(valdf, vars = "all", plot = TRUE, groupvars = "variable") 
     valdf <- valdf %>%
       dplyr::filter(variable %in% vars)
   }
-  browser()
+  # browser()
   qqgg1 <- valdf %>%
     # group_by(!!!groupvars) %>% 
     group_by_at(groupvars) %>% 

@@ -33,6 +33,7 @@ classnc <- nc_open(classncfile)
 devtools::load_all("../../subsetnc")
 
 pixcdf <- pixc_read(path(rodir(65), "pixel_cloud.nc"))
+pixcnc <- nc_open(path(rodir(65), "pixel_cloud.nc"))
 
 rangeinds <- unique(pixcdf$range_index) + 1 # adjust zero-referenced indices
 aziminds <- unique(pixcdf$azimuth_index) + 1 
@@ -151,21 +152,28 @@ intermed2pixc <- function(nc_inter, varid, pixcdf, outname = varid) {
   outdf
 }
 
-foo <- intermed2pixc(classnc_ss2, varid = "classification", 
-                     pixcdf = pixcdf, outname = "class_inter")
+foo <- intermed2pixc(classnc_ss2, 
+                     # varid = "classification", 
+                     # outname = "class_inter",
+                     varid = "coherent_power",
+                     outname = "cohpow_inter",
+                     pixcdf = pixcdf)
 
-sum(foo$class_inter == 1)
-sum(foo$classification == 1)
-
-foo <- intermed2pixc(classnc_ss2, varid = "water_fraction", 
-                     pixcdf = pixcdf, outname = "wfrac_inter")
+# sum(foo$class_inter == 1)
+# sum(foo$classification == 1)
+# foo <- intermed2pixc(classnc_ss2, varid = "water_fraction", 
+#                      pixcdf = pixcdf, outname = "wfrac_inter")
 
 foo %>% 
-  filter(classification == 4) %>%
+  # filter(classification == 4) %>%
   sample_n(1000) %>%
-  ggplot(aes(x = water_frac, y = wfrac_inter)) +
+  # ggplot(aes(x = water_frac, y = wfrac_inter)) +
   # ggplot(aes(x = log(water_frac), y = mu_w)) + 
-  geom_point()
+  ggplot(aes(x = coherent_power, y = cohpow_inter)) +
+  geom_point() + 
+  scale_x_log10() + scale_y_log10()
+
+with(foo, summary(water_frac - wfrac_inter))
 ```
 
 ```{r}
@@ -240,7 +248,12 @@ OK, that's fine. Get the uncertainty, then validate.
 uncert_scale <- function(sig_alpha) sig_alpha * 1.3804 
 
 uncert_orig <- function(p, emu_l, emu_w, nlooks) {
-  var <- p^2 / (nlooks * (emu_w - emu_l)^2)
+  var <- p^2 / ((nlooks) * (emu_w - emu_l)^2)
+  sqrt(var)
+}
+
+uncert_orig = function(p, mu_l, mu_w, nlooks) {
+  var = p^2 / ((nlooks) * (mu_w - mu_l)^2)
   sqrt(var)
 }
 
@@ -290,20 +303,43 @@ wfracdf <- wfracdf %>%
          sigalpha_i = uncert_ig(coherent_power, emu_l = mu_l, emu_w = mu_w, nlooks = num_rare_looks))
 ```
 
-```{r}
+```{r, fig.width = 5, fig.height = 4}
 wfracdf %>% 
   sample_n(300) %>% 
-  ggplot(aes(x = sigalpha_o, y = water_frac_uncert)) +
+  ggplot(aes(y = sigalpha_o, x = water_frac_uncert)) +
+  geom_point() + geom_abline(slope = 1, intercept = 0) + 
+  # ylab("recalculated water_frac_uncert") + 
+  xlab("pixc water_frac_uncert")
+ggsave("../fig/water_frac_uncert_discrepancy.png", width = 5, height = 4)  
+
+wfracdf %>% 
+  sample_n(300) %>% 
+  ggplot(aes(x = sigalpha_o, y = sigalpha_i)) +
   geom_point() + geom_abline(slope = 1, intercept = 0)
 
 
-
 wfracdf %>% 
   sample_n(300) %>% 
-  ggplot(aes(x = sigalpha_s, y = sigalpha_i)) +
-  geom_point()
+  ggplot(aes(x = water_frac_uncert, y = sigalpha_i)) +
+  geom_point() + geom_abline(slope = 1, intercept = 0)
 ```
 
 It looks like the internally calculated water_frac_uncert is larger than what the formula gives. Verified by paper math and reference to Brent's document. Next time: investigate why this is!
 
+What's the slope? 
+
+```{r}
+wfracdf %>% 
+  sample_n(10000) %>% 
+  lm(sigalpha_o ~ water_frac_uncert, data = .) %>% 
+  summary()
+
+1 / 0.7562
+
+wfracdf %>% 
+  sample_n(10000) %>% 
+  lm(sigalpha_i ~ water_frac_uncert, data = .) %>% 
+  summary()
+
+```
 

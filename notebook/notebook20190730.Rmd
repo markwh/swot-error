@@ -1,0 +1,304 @@
+---
+title: "notebook20190730"
+author: "Mark Hagemann"
+date: "7/30/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Yesterday I learned that I was using the wrong number of looks (should have been using *effective* looks, i.e. 4) when correcting the uncertainty. The new uncertainty adjustment fits much better, but now I need to see whether the bias correction actually improves things. 
+
+Carry through some needed R objects.
+
+```{r}
+# function to get variable from intermediate (2-D) to pixel-cloud (1-D) form
+intermed2pixc <- function(nc_inter, varid, pixcdf, outname = varid) {
+  ranges <- pixcdf$range_index
+  azims <- pixcdf$azimuth_index
+  
+  varray <- ncvar_get(nc_inter, varid = varid, collapse_degen = FALSE)
+  
+  # Check if nc_inter is already subset along range ("num_pixels__") 
+  # and/or azimuth ("num_lines__"). If so, revalue the dimnames 
+  # of the returned array before melting. 
+  
+  rowids <- if (is.null(nc_inter$var[["num_pixels__"]]))
+    1:nrow(varray) else
+      as.vector(ncvar_get(nc_inter, "num_pixels__"))
+  colids <- if (is.null(nc_inter$var[["num_lines__"]]))
+    1:ncol(varray) else
+      as.vector(ncvar_get(nc_inter, "num_lines__"))
+  
+  rownames(varray) <- rowids - 1 # Adjust to match python-based indexing in pixc
+  colnames(varray) <- colids - 1
+  
+  outdf <- setNames(reshape2::melt(varray), 
+                    c("range_index", "azimuth_index", outname)) %>% 
+    mutate(range_index = as.numeric(range_index), 
+           azimuth_index = as.numeric(azimuth_index)) %>% 
+    left_join(x = pixcdf, y = ., by = c("range_index", "azimuth_index"))
+  outdf
+}
+
+pixcncfile <- path(rodir(65), "pixel_cloud.nc")
+pixcdf <- pixc_read(pixcncfile)
+pixcnc <- nc_open(pixcncfile)
+pixcnc$dim$`pixel_cloud/points`$len
+nc_close(pixcnc)
+rangeinds <- unique(pixcdf$range_index) + 1 # adjust zero-referenced indices
+aziminds <- unique(pixcdf$azimuth_index) + 1 
+
+
+devtools::load_all("../../subsetnc")
+classncfile <- path(rodir(65), "intermediate_class_maps_0.nc")
+classnc <- nc_open(classncfile)
+
+classnc_ss2 <- nc_subset(classnc, num_pixels %in% rangeinds, num_lines %in% aziminds)
+```
+
+
+Next, use `intermed2pixc()` to get updated alpha, sigma_alpha values. 
+
+```{r}
+
+wfracdf <- intermed2pixc(classnc_ss2, varid = "water_power", 
+                         pixcdf = pixcdf, outname = "mu_w") %>% 
+  intermed2pixc(classnc_ss2, varid = "land_power", 
+                pixcdf = ., outname = "mu_l")
+```
+
+Functions to calculate water fraction and uncertainty
+
+```{r}
+
+calcalpha <- function(N, p, mu_w, mu_l) {
+  numer <- (N / (N - 1)) * p  - mu_l
+  numer / (mu_w - mu_l)
+}
+
+#' inverse gamma result, as simple scaling
+uncert_scale <- function(sig_alpha) sig_alpha * 1.3804 
+
+uncert_orig <- function(p, emu_l, emu_w, nlooks) {
+  var <- p^2 / ((nlooks) * (emu_w - emu_l)^2)
+  sqrt(var)
+}
+
+
+#' inverse gamma result, done out. 
+uncert_ig <- function(p, emu_l, emu_w, nlooks) {
+  var <- nlooks^2 * p^2 / ((nlooks - 1)^2 * (nlooks - 2) * (emu_w - emu_l)^2)
+  sqrt(var)
+}
+
+#' Brent's approximation
+uncert_brent <- function(p, emu_l, emu_w, vmu_l, vmu_w, nlooks) {
+  ealpha <- ((nlooks / (nlooks - 1)) * p  - emu_l) / (emu_w - emu_l)
+  
+  term1 <- nlooks^2 / (vmu_w + vmu_l + (emu_w - emu_l)^2)
+  term2.1 <- p^2 / ((nlooks - 1)^2 * (nlooks - 2))
+  term2.2 <- ealpha^2 * (vmu_w + vmu_l) - vmu_l
+  
+  out <- term1 * (term2.1 + term2.2)
+  sqrt(out) # Return sigma, not sigsq. 
+}
+
+#' My approximation
+uncert_mine <- function(p, emu_l, emu_w, vmu_l, vmu_w, nlooks) {
+  mustar <- emu_w - emu_l
+  sig2star <- vmu_w + vmu_l
+  einvw <- mustar / (mustar^2 - sig2star)
+  vinvw <- einvw^2 * sig2star / (mustar^2 - 2 * sig2star)
+  einvw2 <- vinvw + einvw^2
+  
+  out1 <- (nlooks / (nlooks - 1) * p - emu_l)^2 * vinvw
+  out2 <- vmu_l * einvw2
+  out3 <- nlooks^2 * p^2 / ((nlooks - 1)^2 * (nlooks - 2)) * einvw2
+  
+  out <- sqrt(out1 + out2 + out3)
+  out
+}
+```
+
+
+
+```{r}
+wfracdf <- wfracdf %>% 
+  mutate(wfrac_new = calcalpha(N = 4, coherent_power, mu_w, mu_l),
+         sigalpha_o = uncert_orig(coherent_power, emu_l = mu_l,
+                                  emu_w = mu_w, nlooks = 4),
+         sigalpha_s = uncert_scale(water_frac_uncert),
+         sigalpha_i = uncert_ig(coherent_power, emu_l = mu_l, 
+                                emu_w = mu_w, nlooks = 4))
+
+wfracdf %>% 
+  sample_n(500) %>% 
+  ggplot(aes(x = water_frac, y = wfrac_new)) + 
+  geom_point() + 
+  geom_abline(slope = 1, intercept = 0)
+
+wfracdf %>% 
+  sample_n(500) %>% 
+  ggplot(aes(x = water_frac_uncert, y = sigalpha_i)) + 
+  geom_point() + 
+  geom_abline(slope = 1, intercept = 0)
+```
+
+This makes sense, just need to validate. First put through riverobs. Well, *first* make an updated pixc netcdf.
+
+### Updated netcdf
+
+```{r}
+newncfile <- "../output/area-error/pixel_cloud_fixed5.nc"
+file.copy("../output/area-error/pixel_cloud.nc",
+          newncfile)
+
+newnc <- nc_open(newncfile, write = TRUE)
+newnc$var$`pixel_cloud/water_frac`$dim[[1]]$len
+dim(wfracdf)
+dim(pixcdf)
+```
+
+- Why is pixc_read giving me fewer rows than netcdf shows for length of dimension? 
+  - automatic filtering in `pixc_read()`. I may want to change that, but I don't need to now.
+  
+```{r}
+fullnc_range <- ncvar_get(pixcnc, "pixel_cloud/range_index")
+fullnc_azim <- ncvar_get(pixcnc, "pixel_cloud/azimuth_index")
+fullnc_rangeazim <- fullnc_range * 1e5 + fullnc_azim
+
+df_rangeazim <- with(wfracdf, range_index * 1e5 + azimuth_index)
+
+rangeazim_match <- match(df_rangeazim, fullnc_rangeazim)
+
+newalphahat <- ncvar_get(pixcnc, "pixel_cloud/water_frac")
+newalphahat[rangeazim_match] <- wfracdf$wfrac_new
+
+newsigalpha <- ncvar_get(pixcnc, "pixel_cloud/water_frac_uncert")
+newsigalpha[rangeazim_match] <- wfracdf$sigalpha_i
+
+ncvar_put(newnc, "pixel_cloud/water_frac", newalphahat)
+ncvar_put(newnc, "pixel_cloud/water_frac_uncert", newsigalpha)
+nc_close(newnc)
+```
+
+
+
+
+## Validation
+
+```{r}
+valdf <- rt_valdata("../output/area-error/composite_fixed5/", flag_out_nodes = TRUE)
+
+rt_val_qq(valdf, "area_total")
+
+ggsave("../fig/area-qq-bayes.png")
+
+```
+
+```{r}
+rt_valdata(rodir(1), flag_out_nodes = FALSE) %>% 
+  rt_val_qq("area_total")
+```
+
+I may have to bring this up with Brent. I seem to recall he had made some adjustments to prior pixel values, in order to correct for bias. He may have to do this again? Anyway, in order to convince anyone I should do some simulation. 
+
+- Choose alpha at random from unif(0, 1)
+- pick some constant mu values
+- simulate a bunch of power "observations" from this distribution (k = 4)
+- estimate alpha using known mu, observed power
+  - Brent's way
+  - my way
+  
+
+
+```{r}
+nsim <- 1000
+k <- 4
+alphas <- runif(nsim)
+muw <- median(wfracdf$mu_w)
+mul <- median(wfracdf$mu_l)
+
+thetas <- (alphas * muw + (1 - alphas) * mul) / k
+# thetas1 <- (alphas * (muw - mul) + mul) / k
+
+psim <- rgamma(nsim, shape = k, scale = thetas)
+
+ahat_orig <- (psim - mul) / (muw - mul)
+thetahat_orig <- psim / k
+ahat_new <- (psim * k / (k - 1)  - mul) / (muw - mul)
+thetahat_new <- psim / (k - 1)
+
+mean((ahat_orig - alphas) / alphas)
+mean((ahat_new - alphas) / alphas)
+mean((thetahat_new - thetas) / thetas)
+betahat_new <- (k - 1) / psim
+mean((betahat_new - 1 / thetas) * thetas)
+
+betahat_orig <- (muw - mul) / (psim - mul)
+mean((betahat_orig - 1 / thetas) * thetas)
+
+
+
+mean(ahat_orig - alphas)
+mean(ahat_new - alphas)
+mean(thetahat_new - thetas)
+
+mean((thetahat_new * k - mul) / (muw - mul) - alphas)
+
+
+siga_orig <- psim / (muw - mul) / sqrt(k)
+siga_new <- siga_orig * sqrt(k^3 / (k - 1)^2 / (k - 2))
+
+sd((ahat_orig - alphas) / siga_orig)
+sd((ahat_new - alphas) / siga_new)
+
+```
+
+Now I'm thinking the Bayesian approach is biased, since for us the choice of scale parameter is not arbitrary. The best prior for theta would be one based on a uniform prior on alpha, which (as far as I can see) is not closed form. Theta should have a uniform distribution, but no way to do that without an mcmc. Right? 
+
+```{r}
+hist(thetas)
+```
+
+
+Try another version that is more informative. Then do a real uniform on alpha. 
+
+Theta parameter should have a prior that is Unif(mu_l / N, mu_w / N). That has mean (mu_l + mu_w) / (2N) and variance $(\mu_w - \mu_l)^2 / (12  N^2)$. I can approximate this with a gamma using method of moments. Theta (scale) is inverse gamma
+
+Here's a fun iteration for inverse gamma method of moments. Approximate a Unif(mu_l / N, mu_w / N) using an inverse gamma distribution.
+
+```{r}
+# initialize
+c <- 1
+N <- 4
+
+
+for (i in 1:10) {
+  betai <- 3 * c * (muw + mul)^3 / (2 * N * (muw - mul)^2)
+  alphai <- 2 * N * betai / (muw + mul) + 1
+  c <- (alphai - 1) / (alphai - 2)
+  cat("beta: ", betai, "alpha: ", alphai, "c: ", c, "\n")
+}
+
+# final values
+betaf <- 2.041e-11
+alphaf <- 5.884
+
+# simulate
+unifsim <- runif(1000, mul / N, muw / N)
+gammasim <- 1 / rgamma(1000, shape = alphaf, rate = betaf)
+
+mean(unifsim)
+mean(gammasim)
+
+sd(unifsim)
+sd(gammasim)
+hist(unifsim)
+hist(gammasim)
+
+```
+
