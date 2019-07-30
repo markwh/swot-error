@@ -1,0 +1,59 @@
+---
+title: "Water fraction uncertainty, part 2"
+author: "Mark Hagemann"
+date: "7/16/2019"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Previously I showed that the posterior distribution for water fraction, $\alpha$, is $\text{Inv-Gamma}$ distributed, having expectation $\frac{\frac{N_L}{N_L - 1}p - \mu_l}{\mu_w - \mu_l}$ and variance $\frac{N_L^2 p^2}{(N_L - 1)^2(N_L - 2)(\mu_w - \mu_l)^2}$. Here I'll use those equations to propagate uncertainty from the $\mu_l$ and $\mu_w$ terms. 
+
+Using the law of total variance we have
+
+$$
+\begin{aligned}
+Var(\alpha) &= Var(E[\alpha | \mu_w, \mu_l]) + E[Var(\alpha | \mu_w, \mu_l)] \\
+&= Var\Big(\frac{\frac{N_L}{N_L - 1}p - \mu_l}{\mu_w - \mu_l}\Big) + \frac{N_L^2 p^2}{(N_L - 1)^2(N_L - 2)}E\Big[\frac{1}{(\mu_w - \mu_l)^2}\Big]
+\end{aligned}
+$$
+
+Next, defining $W = \mu_w - \mu_l$, continue with another total-variance decomposition of the first term.
+
+$$
+\begin{aligned}
+Var\Big(\frac{\frac{N_L}{N_L - 1}p - \mu_l}{W}\Big) &=
+  Var\Big(E\Big[\frac{\frac{N_L}{N_L - 1}p - \mu_l}{W}\Bigg| W\Big]\Big) + 
+  E\Big[Var\Big(\frac{\frac{N_L}{N_L - 1}p - \mu_l}{W} \Bigg| W\Big)\Big] \\
+&= Var\Big(\frac{\frac{N_L}{N_L - 1}p - E[\mu_l]}{W}\Big) + E\Big[\frac{1}{W^2} Var(\mu_l)\Big] \\
+&= \Big(\frac{N_L}{N_L - 1}p  - E[\mu_l]\Big)^2 Var(\frac{1}{W}) + Var(\mu_l)E[\frac{1}{W^2}]
+\end{aligned} 
+$$
+
+Combining with the first result, this gives a formula for $Var(\alpha)$ that is a funciton of the mean and variance of two variables, $\mu_l$ and $\frac{1}{W}$ (since $E[\frac{1}{W^2}] = Var(\frac{1}{W}) + (E[\frac{1}{W}])^2$). 
+
+To go further, we need to express the moments of $\frac{1}{W}$ in terms of the moments of $\mu_w$ and $\mu_l$. The only way I can think to do that is to approximate $W$ as a gamma-distributed random variable, so that $\frac{1}{W}$ is inverse-gamma distributed. I don't know exactly how well this approximation will work, but generally it will be better if $SD(\mu_w - \mu_l)$ is small compared to $E(\mu_w - \mu_l)$. 
+
+Define $\mu_* = E[\mu_w] - E[\mu_l]$ and $\sigma_*^2 = Var(\mu_w) + Var(\mu_l)$. Then, method of moments gives the $k, \theta$ parameters of W's approximated Gamma distribution as $\frac{\mu_*^2}{\sigma^2_*}$ and $\frac{\sigma^2_*}{\mu_*}$, respectively. Thus by the inverse gamma distribution we arrive at
+
+$$
+E[\frac{1}{W}] = \frac{\mu_*}{\mu_*^2 - \sigma^2_*}; 
+Var(\frac{1}{W}) = \frac{\mu_*^2 \sigma_*^2}{(\mu_*^2 - \sigma_*^2)^2(\mu_*^2 - 2 \sigma_*^2)}
+$$
+
+## Conclusion
+
+The final reassembled result for variance of water fraction is as follows:
+
+$$
+\begin{aligned}
+Var(\alpha) &= \Big(\frac{N_L}{N_L - 1}p  - E[\mu_l]\Big)^2 Var(\frac{1}{W}) \\
+ &+ Var(\mu_l)E[\frac{1}{W^2}] \\ 
+ &+ \frac{N_L^2 p^2}{(N_L - 1)^2(N_L - 2)}E\Big[\frac{1}{W^2}\Big]
+\end{aligned}
+$$
+
+where $Var\frac{1}{W}$ is computed as above and $E\Big[\frac{1}{W^2}\Big] = Var(\frac{1}{W}) + (E[\frac{1}{W}])^2 = \frac{\mu_*^2}{(\mu_*^2 - \sigma_*^2)(\mu_*^2 - 2 \sigma_*^2)}$. 
+
