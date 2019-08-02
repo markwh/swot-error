@@ -1,0 +1,128 @@
+---
+title: "notebook20190802"
+author: "Mark Hagemann"
+date: "8/2/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Goal for today is to compare different approximations of water fraction uncertainty. Here are the candidates.
+
+1. Original: MLE, frequentist uncertainty
+2. My update: Gamma with scale-invariant prior on theta
+3. Stan model using Uniform(0,1) prior on water fraction
+4. Conjugate prior (inverse gamma) approximation of uniform(0, 1)
+5. Conjugate prior (inverse gamma) approximation of uniform(0, Inf)
+6. (Possibly) MLE with Hessian-derived standard error
+
+Validation can only take place at the node level, and MCMC is out of the question for an entire node (right?), so purpose of stan-modeled estimates is solely to compare the shape of the posterior for alpha with the approximations, at the pixel level. This is not validation, but comparison to a validated model. I could, for instance, see whether water fraction uncertainty at the pixel level is consistently larger or smaller using Stan vs. approximation. 
+
+## Desired result
+
+I want the following:
+
+- Plot overlaying density curves (and MCMC histograms) for a small sample of pixels
+- Plot comparing 1-sigma or 95%CI coverage for a larger sample of pixels
+- Simulated pixel clouds -> rivertiles -> validation for a subset of above results
+  - Whichever best approximates Gamma-uniform(0, 1) case
+  
+
+## Preambulary work 
+
+First, get the validation dataset, stan models, and functions to estimate in each case. 
+
+- Function to get relevant observations from pixel cloud, intermediate files
+  - random sample of pixels (range, azimuth index)
+  - mu_w, mu_l, nefflooks, coh_power
+- Function to create `stanfit` object given observations. 
+- Function to generate density (a la `dgamma()`) given observations
+- Function to generate random sample (a la `rgamma()`) given observations.
+- Function to generate a new pixel cloud with updated water_frac and water_frac_uncert fields
+
+
+Much of this can be ported from existing work: reports/gamma-uniform-bayes.Rmd, 
+
+
+### Extract relevant data
+
+Function to get specified variables for given range/azimuth index, similar to `intermed2pixc()` function. Actually, that function does just fine. Just tidying up the code here. Also making it take vector arguments. 
+
+```{r}
+intermed2pixc <- function(nc_inter, varids, pixcdf) {
+
+  varraylist <- lapply(varids, ncvar_get, nc = nc_inter, collapse_degen = FALSE)
+  names(varraylist) <- if(is.null(names(varids))) varids else names(varids)
+  
+  # Check if nc_inter is already subset along range ("num_pixels__") 
+  # and/or azimuth ("num_lines__"). If so, revalue the dimnames 
+  # of the returned array before melting. 
+  rowids <- if (is.null(nc_inter$var[["num_pixels__"]]))
+    1:nrow(varraylist[[1]]) else as.vector(ncvar_get(nc_inter, "num_pixels__"))
+  colids <- if (is.null(nc_inter$var[["num_lines__"]]))
+    1:ncol(varraylist[[1]]) else as.vector(ncvar_get(nc_inter, "num_lines__"))
+  
+  # Make a joinable data.frame from 1st element in varraylist
+  rownames(varraylist[[1]]) <- rowids - 1 # Adjust to match python-based indexing in pixc
+  colnames(varraylist[[1]]) <- colids - 1
+
+  vardflist0 <- setNames(reshape2::melt(varraylist[[1]]), 
+                         c("azimuth_index", "range_index", 
+                           names(varraylist)[1])) %>% 
+    mutate(range_index = as.numeric(range_index), 
+           azimuth_index = as.numeric(azimuth_index))
+  
+  # melt the remaining varraylist elements, cbind to 1st
+  if (length(varraylist) > 1) {
+    vardflist1 <- lapply(varraylist[-1], function(x) reshape2::melt(x)[[3]])
+    vardf <- cbind(vardflist0, 
+                       setNames(as.data.frame(vardflist1), 
+                                names(varraylist)[-1]))
+  }
+  
+  # join to pixc df and return
+  outdf <- inner_join(x = pixcdf, y = vardf, by = c("range_index", "azimuth_index"))
+  outdf
+}
+```
+
+~~Now a higher-level function to get only mu_w, mu_l, nefflooks, coh_power for a specified, or random, set of pixels.~~ I think I'll just do some simple processing of the output from `intermed2pixc()`--no need to put into a function. 
+
+```{r}
+testdir <- rodir(65)
+
+list.files(testdir)
+pixcdf <- pixc_read(path(testdir, "pixel_cloud.nc")) %>% 
+  sample_n(100)
+
+rangeinds <- pixcdf$range_index + 1
+aziminds <- pixcdf$azimuth_index + 1
+
+intermednc <- nc_open(path(testdir, "intermediate_class_maps_0.nc"))
+intermed_sset <- nc_subset(intermednc, num_lines %in% rangeinds, 
+                           num_pixels %in% aziminds)
+
+testobs <- intermed2pixc(intermed_sset, 
+                         c(mu_w = "water_power", mu_l = "land_power"),
+                         pixcdf = pixcdf) %>% 
+  transmute(range = range_index, azimuth = azimuth_index,
+            coh_power = coherent_power, nefflooks = 4, mu_w, mu_l)
+
+```
+
+Density and random sample generating functions
+
+```{r}
+dwfrac <- function(x, p, mu_w, mu_l, nlooks, 
+                   method = c("orig", "igapprox", "iguninf", "scaleinv")) {
+  method <- match.arg(method)
+  
+  
+  
+  
+  
+}
+```
+
