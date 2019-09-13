@@ -1,0 +1,262 @@
+---
+title: "notebook20190822"
+author: "Mark Hagemann"
+date: "8/22/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+I'm taking a little time this morning to make some mapping functions. I want to easily:
+
+- map pixel cloud
+- map pixcvec (improved geolocation)
+- plot slant plane
+- color by classification
+- over/underlay truth
+- show a range of nodes
+- show a box of range/azimuth
+
+
+Here's a potential workflow.
+
+```{r}
+pixcdf %>% 
+  grab_nodes(13:22, pcvdf) %>% #or..
+  grab_nodebox(13:22, pcvdf, dilate = 10) %>% # slant-plane box, possibly dilated
+  pixc_map(colorby = "classification", 
+           geoloc = "best",
+           real_area = TRUE, 
+           water_frac = FALSE) %>%  # or...
+  pixc_slantmap(colorby = "classification")
+```
+
+Start building these out.
+
+```{r}
+
+#' @param pcvdf a data.frame that includes node and range/azimuth information, 
+#'  e.g. as returned by \code{pixcvec_read()}
+grab_nodes <- function(pixdf, nodeids, pcvdf = pixdf) {
+  radf <- pcvdf %>% 
+    filter(node_index %in% nodeids)
+  
+  out <- pixdf %>% 
+    filter((range_index * 1e5 + azimuth_index) %in% 
+             (radf$range_index * 1e5 + radf$azimuth_index))
+  out
+}
+
+grab_nodebox <- function(pixdf, nodeids, pcvdf = pixdf, dilate = 0) {
+  radf <- pcvdf %>% 
+    filter(node_index %in% nodeids)
+  
+  minrange <- min(radf$range_index, na.rm = TRUE) - dilate
+  maxrange <- max(radf$range_index, na.rm = TRUE) + dilate
+  minazimuth <- min(radf$azimuth_index, na.rm = TRUE) - dilate
+  maxazimuth <- max(radf$azimuth_index, na.rm = TRUE) + dilate
+  
+  out <- pixdf %>% 
+    filter(range_index >= minrange, range_index <= maxrange, 
+           azimuth_index >= minazimuth, azimuth_index <= maxazimuth)
+  out
+}
+
+pixc_map <- function(pixdf, 
+                     colorby = "classification", 
+                     geoloc = c("best", "orig", "improved"),
+                     real_area = FALSE, 
+                     water_frac = FALSE,
+                     maxpoints = 2500, ...) {
+  
+  geoloc <- match.arg(geoloc)
+  
+  if (nrow(pixdf) > maxpoints) 
+    stop(sprintf("Number of pixels (%s) is greater than maxpoints (%s).\n",
+                 nrow(pixdf), maxpoints),
+         "Please filter pixdf (e.g. grab_nodes()) or increase maxpoints")
+  
+  # geolocation:
+  if (geoloc == "improved" || 
+      (geoloc == "best" && !is.null(pixdf$latitude_vectorproc))) {
+    pixdf$latitude <- pixdf$latitude_vectorproc
+    pixdf$longitude <- pixdf$longitude_vectorproc
+  }
+  
+  # sizing, coloring of points/circles
+  pixdf$sizescale <- 1
+  if (water_frac)  pixdf$sizescale <- pixdf$water_frac
+  pixdf$colorvar <- pixdf[[colorby]]
+  
+  # Construct ggplot object
+  mapgg <- pixdf %>% 
+    ggplot()
+  
+  if (real_area) {
+    
+    # convert pixel area to radius in meters, then to lat/lon
+    pixradius_m <- sqrt(pixdf$pixel_area * pixdf$sizescale / pi)
+    gdradius_m <- sqrt(gdemdf$pixel_area / pi)
+    
+    pixdf$radius_ll <- to_latlon(pixradius_m, pixdf$latitude, pixdf$longitude)
+    
+    mapgg <- mapgg + 
+      geom_circle(aes(x0 = longitude, y0 = latitude,
+                    fill = colorvar, 
+                    r = radius_ll),
+                n = 8, linetype = 0, ...)
+  } else { # use points instead of circles
+    
+    pixcsize = 2.5
+    mapgg <- mapgg + 
+      geom_point(aes(x = longitude, y = latitude,
+                     color = colorvar, 
+                     size = pixcsize * sqrt(sizescale)),
+                 shape = 20, ...) + 
+      scale_size_identity() +
+      labs(color = colorby)
+  }
+    
+  mapgg <- mapgg + 
+    coord_map()
+  mapgg
+}
+
+
+pixc_slantmap <- function(pixdf, 
+                     colorby = "classification", 
+                     maxpoints = 5000, ...) {
+  # coloring of points/circles
+  pixdf$colorvar <- pixdf[[colorby]]
+  
+  # Construct ggplot object
+  mapgg <- pixdf %>% 
+    ggplot()
+  
+  pixcsize = 2.5
+  mapgg <- mapgg + 
+    geom_raster(aes(x = range_index, y = azimuth_index,
+                   fill = colorvar), ...) + 
+    labs(fill = colorby)
+
+  mapgg
+}
+```
+
+Try it out!
+
+```{r}
+pixdf1 <- pixc_read(rodir(65, "pixel_cloud_new.nc"))
+pcvdf1 <- pixcvec_read(rodir(65, "frac", "pcv.nc"))
+
+pixdf1 %>% 
+  # grab_nodes(350:360, pcvdf1) %>% 
+  grab_nodebox(350:360, pcvdf1) %>% 
+  # glimpse() %>%
+  mutate(classification = as.factor(classification)) %>% 
+  pixc_map(maxpoints = 4000)
+
+pixdf1 %>% 
+  # grab_nodes(350:500, pcvdf1) %>%
+  grab_nodebox(350:360, pcvdf1) %>%
+  # glimpse() %>%
+  mutate(classification = as.factor(classification)) %>% 
+  pixc_slantmap()
+
+pixdf1 %>% 
+  pixc_join(pcvdf1, "outer") %>% 
+  grab_nodebox(350:360) %>% 
+  pixc_slantmap()
+  
+```
+
+That appears to work! Not bad for a little time spent. Put this into rivertile, along with a `pixc_pcv()` function that replaces the work of `join_pixc()`. Also, make `classification` a factor by default. 
+
+
+Good. Now pick up where I left off yesterday.
+
+
+```{r}
+pixdf1 <- rodir(82, "pixel_cloud_new.nc") %>% pixc_read() %>% 
+  pixc_join(pixcvec_read(rodir(82, "composite/pcv.nc")), type = "outer")
+
+pixdf1_gdem <- rodir(82, "fake_pixc.nc") %>% pixc_read() %>% 
+  pixc_join(pixcvec_read(rodir(82, "composite/pcv_gdem.nc")), type = "outer")
+  
+pixdf1_gdem2 <- rodir(82, "fake_pixc.nc") %>% pixc_read() %>% 
+  pixc_join(pixcvec_read(rodir(82, "pcv_gdem_dil2.nc")), type = "outer")
+  
+
+pixdf1 %>% 
+  # grab_nodes(68 + (-5:5)) %>%
+  grab_nodebox(68 + (-5:5)) %>%
+  filter(classification != 1) %>% 
+  pixc_map(maxpoints = 10000, geoloc = "orig", colorby = "node_index") +
+  coord_map()
+
+pixdf1 %>% 
+  # grab_nodes(68 + (-5:5)) %>%
+  grab_nodebox(68 + (-2:2)) %>%
+  filter(classification != 1) %>% 
+  pixc_map(maxpoints = 10000, real_area = TRUE,
+           water_frac = TRUE) +
+  coord_map() +
+  guides(fill = "none")
+ggsave("../fig/spatial_reg_figs/node68_1.png", width = 3, height = 4)
+
+pixdf1 %>% 
+  # grab_nodes(68 + (-5:5)) %>%
+  grab_nodebox(68 + (-2:2)) %>%
+  filter(classification != 1) %>% 
+  pixc_map(maxpoints = 10000, water_frac = FALSE, 
+           size = 2) +
+  coord_map() +
+  guides(color = "none")
+ggsave("../fig/spatial_reg_figs/node68_2.png", width = 3, height = 4)
+
+
+pixdf1_gdem %>% 
+  # grab_nodes(68 + (-5:5)) %>%
+  grab_nodebox(68 + (-5:5)) %>%
+  pixc_map(maxpoints = 100000, size = 0.1, 
+           colorby = "node_index", geoloc = "orig") +
+  coord_map()
+
+
+pixdf1 %>% 
+  # grab_nodes(68 + (-5:5)) %>%
+  grab_nodebox(68 + (-5:5)) %>%
+  pixc_slantmap() +
+  guides(fill ="none")
+ggsave("../fig/spatial_reg_figs/node68_3.png", width = 3, height = 4)
+
+pixdf1_gdem %>% 
+  # grab_nodes(68 + (-5:5)) %>%
+  grab_nodebox(68 + (-5:5)) %>%
+  pixc_slantmap(colorby = "node_index") +
+  guides(fill ="none")
+ggsave("../fig/spatial_reg_figs/node68_4.png", width = 3, height = 4)
+
+
+pixdf1_gdem2 %>% 
+  # grab_nodes(68 + (-5:5)) %>%
+  grab_nodebox(68 + (-5:5)) %>%
+  pixc_slantmap(colorby = "node_index")
+```
+
+
+See where this is. 
+
+```{r}
+library(leaflet)
+pixdf1 %>% 
+  grab_nodes(68) %>% 
+  sample_n(10) %>% 
+  leaflet() %>% 
+  addTiles() %>% 
+  addCircleMarkers()
+  
+```
+

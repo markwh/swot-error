@@ -1,0 +1,154 @@
+---
+title: "notebook20190807"
+author: "Mark Hagemann"
+date: "8/7/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Still working in yesterday's notebook, but I want to use this notebook to delve into integration of the gamma-uniform posterior. With help of wolfram alpha. 
+
+
+Likelihood funciton
+
+```{r}
+theta_dens <- function(theta, p, mu_w, mu_l, nlooks = 4) {
+  numer <- theta^(-nlooks) * exp(-p / theta)
+  
+  thetavec <- seq(mu_l / nlooks, mu_w / nlooks, length.out = 1000)
+  denom <- sum(thetavec^(-nlooks) * exp(-p / thetavec))
+}
+
+theta_mean <- function(p, mu_w, mu_l, nlooks = 4) {
+  thetavec <- seq(mu_l / nlooks, mu_w / nlooks, length.out = 1000)
+  numer <- sum(thetavec^(1-nlooks) * exp(-p / thetavec))
+  denom <- sum(thetavec^(-nlooks) * exp(-p / thetavec))
+  numer / denom
+}
+
+wfrac_mean <- function(p, mu_w, mu_l, nlooks = 4) {
+  thetavec <- seq(mu_l / nlooks, mu_w / nlooks, length.out = 1000)
+  wfracvec <- seq(0, 1, length.out = 1000)
+  numer <- sum(wfracvec * thetavec^(-nlooks) * exp(-p / thetavec))
+  denom <- sum(thetavec^(-nlooks) * exp(-p / thetavec))
+  numer / denom
+}
+
+rownum <- 166764
+t1 <- with(wfracdf[rownum, ], mu_l / 4)
+t2 <- with(wfracdf[rownum, ], mu_w / 4)
+p <- wfracdf$coherent_power[rownum]
+numermean <- with(wfracdf[rownum, ], theta_mean(coherent_power, mu_w, mu_l, 4))
+rhspiece <- with(wfracdf[rownum, ], numermean * coherent_power^(2))
+gammainc(2, p / t1)
+gammainc(2, p / t2)
+
+gammainc(p / t2, 2) - gammainc(p / t1, 2)
+incgam(p / t2, 2) - incgam(p / t1, 2)
+
+
+# with(wfracdf[362, ], wfrac_mean(coherent_power, mu_w, mu_l, 4))
+```
+
+OK, I think I have this figured out. Outline the steps. 
+
+- integration constant, c such that f(theta) = c L(theta) is a valid pdf
+- mean: integrate c theta L(theta)
+- 2nd moment: integrate c theta^2 L(theta)
+
+```{r}
+# integration constant
+gu_constant <- function(p, mu_w, mu_l, nlooks = 4) {
+  t1 <- mu_l / nlooks
+  t2 <- mu_w / nlooks
+  
+  out <- p^(1 - nlooks) * (incgam(p / t2, nlooks - 1) - 
+                             incgam(p / t1, nlooks - 1))
+  out
+}
+
+with(wfracdf[1, ], gu_constant(coherent_power, mu_w, mu_l))
+
+gu_mean <- function(p, mu_w, mu_l, nlooks = 4) {
+  t1 <- mu_l / nlooks
+  t2 <- mu_w / nlooks
+  
+  const <- 1 / gu_constant(p, mu_w, mu_l, nlooks)
+  
+  out <- const * p^(2 - nlooks) * (incgam(p / t2, nlooks - 2) - 
+                             incgam(p / t1, nlooks - 2))
+  out
+}
+
+with(wfracdf[1, ], gu_mean(coherent_power, mu_w, mu_l))
+
+gu_var <- function(p, mu_w, mu_l, nlooks = 4) {
+  t1 <- mu_l / nlooks
+  t2 <- mu_w / nlooks
+  
+  const <- 1 / gu_constant(p, mu_w, mu_l, nlooks)
+  mu <- gu_mean(p, mu_w, mu_l, nlooks)
+  
+  mom2 <- const * p^(3 - nlooks) * (incgam(p / t2, nlooks - 3) - 
+                             incgam(p / t1, nlooks - 3))
+  out <- mom2 - mu^2
+  out
+}
+
+with(wfracdf[1, ], gu_var(coherent_power, mu_w, mu_l)) %>% sqrt()
+
+```
+
+Right on! I got the moments. 
+
+
+Finally, I can run the pixel clouds through riverobs and validate the output. 
+
+OK, ran riverobs. Now let's validate. 
+
+(interjecting from the future to add a hybrid "orig-si" method, combining orig estimate, scale-invariant uncertainty)
+
+```{r}
+dir_copy("../output/area-error/orig/", "../output/area-error/orig_si")
+
+file.copy("../output/area-error/pixel_cloud_orig.nc", 
+          "../output/area-error/pixel_cloud_orig_si.nc")
+
+si_nc <- nc_open("../output/area-error/pixel_cloud_scaleinv.nc")
+newuncert <- ncvar_get(si_nc, "pixel_cloud/water_frac_uncert")
+origsi_nc <- nc_open("../output/area-error/pixel_cloud_orig_si.nc", write = TRUE)
+
+ncvar_put(origsi_nc, "pixel_cloud/water_frac_uncert", vals = newuncert)
+
+nc_close(si_nc)
+nc_close(origsi_nc)
+```
+
+
+
+```{r}
+
+allmethods <- c("orig", "igapprox", "iguninf", "scaleinv", "gamma_unif", 
+                "orig_si")
+valdirs <- fs::path("../output/area-error/", allmethods)
+
+valdfs <- valdirs %>% 
+  purrr::map(~rt_valdata(., flag_out_nodes = TRUE)) %>% 
+  setNames(allmethods)
+
+allvaldf <- valdfs %>% 
+  bind_rows(.id = "method")
+
+rt_val_qq(allvaldf, vars = "area_total", groupvars = "method") +
+  facet_wrap(~method, scales = "free_y") + 
+  theme_bw() + 
+  ylab("scaled node area error")
+  
+ggsave("../fig/uncmethods_qq.png", width = 8, height = 5, dpi = 300)
+
+
+```
+

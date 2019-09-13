@@ -1,0 +1,163 @@
+---
+title: "notebook20190820"
+author: "Mark Hagemann"
+date: "8/20/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+I'm becoming convinced that I need to do a separate set of RiverObs runs after using my upstream-downstream algo on the pixel clouds. Take a similar approach as I did with fixing the water fraction uncertainty. 
+
+And I can use my nc_subset() function!
+
+```{r}
+library(subsetnc)
+# modified from update_pixc()
+usds_pixc <- function(pixcfile, pcvfile, newfile = "pixel_cloud_usds.nc",
+                      is_gdem = FALSE) {
+  stopifnot(file.exists(pixcfile))
+  putdir <- normalizePath(paste0(pixcfile, "/.."))
+  putfile <- file.path(putdir, newfile)
+  file.copy(pixcfile, putfile, overwrite = TRUE)
+  outnc <- nc_open(putfile, write = TRUE)
+  on.exit(nc_close(outnc))
+  
+  origpixcnc <- nc_open(pixcfile)
+  on.exit(nc_close(origpixcnc))
+  origpixcdf <- pixc_read(pixcfile) %>% 
+    mutate(rangeazim = range_index * 1e5 + azimuth_index)
+  origpcvdf <- pixcvec_read(pcvfile)
+  
+  subsetdf <- us_ds(origpcvdf) %>% filter(connected) %>% 
+    select(range_index, azimuth_index) %>% 
+    mutate(rangeazim = range_index * 1e5 + azimuth_index)
+  # browser()
+  
+  ncrange <- ncvar_get(outnc, "pixel_cloud/range_index")
+  ncazim <- ncvar_get(outnc, "pixel_cloud/azimuth_index")
+  ncrangeazim <- ncrange * 1e5 + ncazim
+  
+  keepdim <- match(subsetdf$rangeazim, ncrangeazim)
+  
+  outclass <- ncvar_get(outnc, "pixel_cloud/classification")
+  
+  if (is_gdem) {
+    outclass[-keepdim] <- 0
+  } else {
+    outclass[-keepdim] <- 1
+  }
+  
+  if (is_gdem) {
+    outclass[-keepdim] <- 0
+  } else {
+    outclass[-keepdim] <- 1
+  }
+  ncvar_put(outnc, "pixel_cloud/classification", outclass, 
+            start = 1, count = length(outclass))      
+
+}
+
+
+```
+
+
+Now make the new pixc netcdfs. 
+
+```{r}
+dirs_to_run <- c(valdirs_simple, valdirs_composite, valdirs_frac) # from validation objects
+
+dir <- dirs_to_run[11]
+for (dir in dirs_to_run) {
+  print(dir)
+  pixcfile <- fs::path(dir, "pixel_cloud_new.nc")
+  pcvfile <- fs::path(dir, "pcv.nc")
+  usds_pixc(pixcfile = pixcfile, pcvfile = pcvfile, newfile = "pixel_cloud_new_usds.nc")
+}
+```
+
+Now gdem. I really hope this works. 
+
+```{r}
+gdemdirs <- rodir(valnums)
+
+for (dir in gdemdirs) {
+  print(dir)
+  pixcfile <- fs::path(dir, "fake_pixc.nc")
+  pcvfile <- fs::path(dir, "pcv_gdem.nc")
+  
+  usds_pixc(pixcfile = pixcfile, pcvfile = pcvfile, 
+            newfile = "fake_pixc_usds.nc", is_gdem = TRUE)
+}
+
+
+```
+
+
+Why is netcdf giving me zero-length variables?
+
+```{r}
+pixcfile1 <- fs::path(dir, "pixel_cloud.nc")
+pixcfile2 <- fs::path(dir, "fake_pixc.nc")
+
+testnc1 <- nc_open(pixcfile1)
+testnc2 <- nc_open(pixcfile2)
+
+keepinds <- 1:10
+
+nc_subset(testnc1, `tvp/num_tvps` %in% keepinds, keepinds = keepinds)
+nc_subset(testnc2, `tvp/nr_tvps` < 10)
+```
+
+Tracing the call stack. 
+
+- `ncss_create_fill`
+- `ncvar_put`
+- `ncvar_size`
+- `.C("R_nc4_varsize", ...)`
+- `nc_inq_dimlen` Code is here: https://www.unidata.ucar.edu/software/netcdf/docs/ddim_8c_source.html
+- 
+
+
+I figured out where the problem is, but not why it's happening. I did figure out a workaround. I think. Can I use dots argument cleverly?
+
+```{r}
+testfun <- function(...) {
+  browser()
+  argexprs <- enexprs(...)
+  
+  print("hello")
+}
+
+c = 1:4
+testfun(a = 3, d < 23, c = c)
+```
+
+
+This is really puzzling scoping behavior. 
+
+```{r}
+fun1 <- function(x, ...) {
+  exprs <- enexprs(...)
+  # browser()
+  
+  for (expr in exprs) print(eval_tidy(expr, env = parent.frame()))
+  print("done")
+}
+
+fun2 <- function(y) {
+  z <- 3
+  x <- "abc"
+  fun1(x, z < 5)
+}
+
+fun2(5)
+```
+
+Right. Need to use `parent.frame()` to get dynamic scoping behavior. 
+
+Still running into problems. I think I'm better off changing the classification to land rather than subsetting the pixc. This will result in larger files, but will be faster. 
+
+Alright, that's done. Make a new notebook to check out the results.

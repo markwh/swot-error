@@ -1,0 +1,28 @@
+---
+title: "notebook20190911"
+author: "Mark Hagemann"
+date: "9/11/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Looking into an inconsistency in gdem WSE node accumulation: day 314, reach 7, GDEM refdem
+
+```{r}
+load("../cumerr-shiny/cache/rtnodes_master.RData")
+load("../cumerr-shiny/cache/gdnodes_master.RData")
+
+
+
+testrtnode <- rtnodes_master %>% glimpse() %>% 
+  filter(run %in% c(88, 89), reach_id == 7, refdem == "GDEM")
+testgdnode <- rtnodes_master %>% glimpse() %>% 
+  filter(run %in% c(88, 89), reach_id == 7, refdem == "GDEM")
+
+```
+
+
+This may be due to the errors in these runs I found yesterday. Check into it when I get back home. 

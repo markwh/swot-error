@@ -1,0 +1,360 @@
+---
+title: "notebook20190806"
+author: "Mark Hagemann"
+date: "8/6/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+I'm still chugging along with results in the 0802 notebook, but I'm also trying out an integration of actual gamma_uniform distribution. Possible I can get density after all!
+
+```{r}
+library(pracma)
+gammainc(3, 0)
+incgam(3, 0)
+
+## DON'T NEED TO APPROXIMATE! INTEGRAL IS BOUNDED AT WFRAC = [0,1]
+# denom_gu_approx <- function(x, k, upper = 1e7) {
+#   x^(1 - k) * gammainc(k - 1, x / upper)[1]
+# }
+
+denom_gu <- function(x, k, lower, upper) {
+  # browser()
+  f1 <- x^(1 - k) * gammainc(k - 1, x / upper)[2]
+  print(f1)
+  f0 <- x^(1 - k) * gammainc(k - 1, x / lower)[2]
+  print(f0)
+  f1 - f0
+}
+
+denom_gu_approx(1e-11, 4, 1e3)
+denom_gu(1e-11, 4, 1e-12 / 4, 1e-10 / 4)
+
+
+
+
+# approximate the density wrt wfrac
+dgu_approx <- function(wfrac, mu_w, mu_l, power, nlooks, upper = 1e7) {
+  
+  x_theta <- (wfrac * (mu_w - mu_l) + mu_l) / nlooks
+  
+  # bounds on theta, based on water fraction bounds and mu's
+  lwr_theta <- mu_l / nlooks
+  upr_theta <- mu_w / nlooks
+  keep <- x_theta > lwr_theta & x_theta < upr_theta
+  
+  out <- rep(0, length(x_theta))
+  
+  numer <- (x_theta[keep])^(-nlooks) * exp(-power / (x_theta[keep]))
+  # print(numer)
+  denom <- denom_gu(x = power, k = nlooks, 
+                    lower = lwr_theta, upper = upr_theta)
+  print(denom)
+  out[keep] <- numer / denom
+  out
+  # numer
+}
+
+plot(0:100 / 50, dgu_approx(0:100 / 50, mu_w = 3, mu_l = 1, power = 2, nlooks = 4))
+
+dgu_approx(0:100 / 50, mu_w = 1e-10, mu_l = 1e-12, power = 2e-11, nlooks = 4) *
+      1 / 50
+
+sum(dgu_approx(0:100 / 50, mu_w = 1e-10, mu_l = 1e-12, power = 2e-11, nlooks = 4) *
+      1 / 50)
+
+```
+
+My guess is that the integral diverges. It definitely does! So the mean is undefined. Argh! But mine is bounded! 
+
+I can't seem to figure out the incomplete gamma--scrap for now and just run with the likelihood. 
+
+Try another tack: manually integrate to get moments
+
+```{r}
+wfrac_lik <- function(wfrac, )
+
+# gu_moments <- function(p, nlooks, mu_w, mu_l, nn = 1000) {
+#   wfracvec <- seq(0, 1, length.out = nn)
+#   thetavec <- (wfracvec * (mu_w - mu_l) + mu_l) / nlooks
+#   lik_theta <- thetavec^(-nlooks) * exp(-p / thetavec)
+#   denom_theta <- sum(lik_theta)
+#   
+#   mean_wfrac <- sum(wfracvec * lik_theta / denom_theta)
+#   mom2_wfrac <- sum(wfracvec^2 * lik_theta / denom_theta)
+#   var_wfrac <- mom2_wfrac - mean_wfrac^2
+#   
+#   out <- c(mean = mean_wfrac, sd = sqrt(var_wfrac))
+#   out
+# }
+# 
+# gu_moments(6e-13, 4, 1e-10, 1e-12, nn = 1000)
+
+```
+
+Here's the actual moment funcitons (not approximated)
+
+```{r}
+# integration constant
+gu_constant <- function(p, mu_w, mu_l, nlooks = 4) {
+  t1 <- mu_l / nlooks
+  t2 <- mu_w / nlooks
+  
+  out <- p^(1 - nlooks) * (incgam(p / t2, nlooks - 1) - 
+                             incgam(p / t1, nlooks - 1))
+  out
+}
+
+with(wfracdf[1, ], gu_constant(coherent_power, mu_w, mu_l))
+
+gu_mean <- function(p, mu_w, mu_l, nlooks = 4) {
+  t1 <- mu_l / nlooks
+  t2 <- mu_w / nlooks
+  
+  const <- 1 / gu_constant(p, mu_w, mu_l, nlooks)
+  
+  out <- const * p^(2 - nlooks) * (incgam(p / t2, nlooks - 2) - 
+                             incgam(p / t1, nlooks - 2))
+  out
+}
+
+with(wfracdf[1, ], gu_mean(coherent_power, mu_w, mu_l))
+
+gu_var <- function(p, mu_w, mu_l, nlooks = 4) {
+  t1 <- mu_l / nlooks
+  t2 <- mu_w / nlooks
+  
+  const <- 1 / gu_constant(p, mu_w, mu_l, nlooks)
+  mu <- gu_mean(p, mu_w, mu_l, nlooks)
+  
+  mom2 <- const * p^(3 - nlooks) * (incgam(p / t2, nlooks - 3) - 
+                             incgam(p / t1, nlooks - 3))
+  out <- mom2 - mu^2
+  out
+}
+
+gu_moments <- function(p, mu_w, mu_l, nlooks = 4) {
+  meantheta <- gu_mean(p, mu_w, mu_l, nlooks)
+  vartheta <- gu_var(p, mu_w, mu_l, nlooks)
+  mean_wfrac <- (nlooks * meantheta - mu_l) / (mu_w - mu_l)
+  var_wfrac <- (nlooks / (mu_w - mu_l))^2 * vartheta
+  out <- c(mean = mean_wfrac, sd = sqrt(var_wfrac))
+  out
+}
+
+gu_moments(6e-13, 1e-10, 1e-12, 4)
+
+```
+
+
+
+Deciding it's better to port the code beginning with moment estimation and pixel cloud creation into today's notebook. 
+
+```{r}
+
+wfrac_moments <- function(p, mu_w, mu_l, nlooks, 
+                   method = c("orig", "igapprox", "iguninf", 
+                              "scaleinv", "gamma_unif")) {
+  method <- match.arg(method)
+  
+  if (method == "orig") {
+    meanwfrac <- (p - mu_l) / (mu_w - mu_l)
+    sdwfrac <- p / (mu_w - mu_l) / sqrt(nlooks)
+  } else if (method == "igapprox") {
+    # Uniform prior moments
+    wfrachat_prior <- 0.5
+    wfracvar_prior <- 1 / 12
+    thetahat_prior <- (wfrachat_prior * (mu_w - mu_l) + mu_l) / nlooks
+    thetavar_prior <- wfracvar_prior * (mu_w - mu_l)^2 / (nlooks^2)
+    
+    # prior inverse gamma parameters on theta (by moment matching to unif)
+    alpha_prior <- thetahat_prior^2 / thetavar_prior + 2
+    beta_prior <- thetahat_prior * (thetahat_prior^2 / thetavar_prior + 1)
+    
+    # posterior parameters on theta (inverse gamma)
+    alpha_post <- alpha_prior + nlooks
+    beta_post <- beta_prior + p
+    
+    # inverse gamma moments
+    meanwfrac <- igmean_wfrac(alpha_post, beta_post, nlooks, mu_w, mu_l)
+    sdwfrac <- sqrt(igvar_wfrac(alpha_post, beta_post, nlooks, mu_w, mu_l))
+
+  } else if (method == "iguninf") {
+    # Same, just boost the variance to make "uninformative"
+    # Uniform prior moments
+    wfrachat_prior <- 0.5
+    wfracvar_prior <- 25
+    thetahat_prior <- (wfrachat_prior * (mu_w - mu_l) + mu_l) / nlooks
+    thetavar_prior <- wfracvar_prior * (mu_w - mu_l)^2 / (nlooks^2)
+    
+    # prior inverse gamma parameters on theta
+    alpha_prior <- thetahat_prior^2 / thetavar_prior + 2
+    beta_prior <- thetahat_prior * (thetahat_prior^2 / thetavar_prior + 1)
+    
+    # posterior parameters on theta (inverse gamma)
+    alpha_post <- alpha_prior + nlooks
+    beta_post <- beta_prior + p
+    
+    # inverse gamma moments
+    meanwfrac <- igmean_wfrac(alpha_post, beta_post, nlooks, mu_w, mu_l)
+    sdwfrac <- sqrt(igvar_wfrac(alpha_post, beta_post, nlooks, mu_w, mu_l))
+    
+  } else if (method == "scaleinv") {
+    # scale-invariant prior
+    # posterior is inverse gamma -- limit as alpha, beta priors go to zero. 
+    meanwfrac <- (nlooks / (nlooks - 1) * p - mu_l) / (mu_w - mu_l)
+    sdwfrac <- nlooks * p / (mu_w - mu_l) / (nlooks - 1) * (nlooks - 2)^(-1/2)
+  } else if (method == "gamma_unif") {
+    moms <- gu_moments(p, mu_w, mu_l, nlooks)
+    meanwfrac <- moms["mean"]
+    sdwfrac <- moms["sd"]
+  } else {
+    stop(sprintf("method %s not recognized.\n", method))
+  }
+  
+  out <- list(mean = meanwfrac, sd = sdwfrac)
+  out
+}
+```
+
+### Compare moments. 
+
+```{r}
+
+allmomfun <- function(tosrow) {
+  
+  cohpow <- tosrow$coh_power
+  muw <- tosrow$mu_w
+  mul <- tosrow$mu_l
+  nlook <- tosrow$nefflooks
+  allmethods <- c("orig", "igapprox", "iguninf", "scaleinv", "gamma_unif")
+  momveclist <- allmethods %>% 
+    purrr::map(~wfrac_moments(p = cohpow, mu_w = muw, mu_l = mul, 
+                             nlooks = nlook, method = .)) %>% 
+    purrr::map(~as.data.frame(.))
+  momdf <- dplyr::bind_rows(setNames(momveclist, allmethods),
+                                .id = "method")
+  momdf
+}
+
+
+allmomdf <- testobs_small %>% 
+  split(f = 1:nrow(.)) %>% 
+  purrr::map(~allmomfun(.)) %>% 
+  bind_rows(.id = "pixel") %>% 
+  mutate(pixel = as.factor(as.numeric(pixel)),
+         lower = mean - 2 * sd, upper = mean + 2 * sd)
+
+allmomdf %>% glimpse() %>% 
+  ggplot(aes(x = method, ymin = lower, ymax = upper)) + 
+  geom_linerange(aes(color = method), size = 0.8) + 
+  facet_wrap(~pixel, scales = "free_y")
+
+```
+
+
+
+### Pixel clouds
+
+Where did I last do this? Answer: 20190730 notebook. 
+
+
+```{r}
+pixcncfile <- path(rodir(65), "pixel_cloud.nc")
+pixcdf <- pixc_read(pixcncfile)
+# pixcnc <- nc_open(pixcncfile)
+# pixcnc$dim$`pixel_cloud/points`$len
+# nc_close(pixcnc)
+rangeinds <- unique(pixcdf$range_index) + 1 # adjust zero-referenced indices
+aziminds <- unique(pixcdf$azimuth_index) + 1
+
+
+devtools::load_all("../../subsetnc")
+classncfile <- path(rodir(65), "intermediate_class_maps_0.nc")
+classnc <- nc_open(classncfile)
+classnc_ss2 <- nc_subset(classnc, num_pixels %in% rangeinds, num_lines %in% aziminds)
+nc_close(classnc)
+  
+wfracdf <- intermed2pixc(classnc_ss2, 
+                         varids = c(mu_w = "water_power", mu_l = "land_power",
+                                    cohpow_classnc = "coherent_power"),
+                         pixcdf = pixcdf)
+
+wfracdf %>% 
+  sample_n(200) %>% 
+  plot(coherent_power ~ cohpow_classnc, .)
+
+# Make and fill the new netcdfs. 
+allmethods <- c("orig", "igapprox", "iguninf", "scaleinv", "gamma_unif")
+alphahatvecs <- lapply(allmethods, function(x) wfracdf$water_frac) %>% 
+  setNames(allmethods) %>% as.data.frame()
+sigalphavecs <- lapply(allmethods, function(x) wfracdf$water_frac_uncert) %>% 
+  setNames(allmethods) %>% as.data.frame()
+
+
+for (method in allmethods[-1:-2]) {
+  print(method)
+  newncfile <- sprintf("../output/area-error/pixel_cloud_%s.nc", method)
+  file.copy(pixcncfile, newncfile)
+  pixcnc <- nc_open(pixcncfile)
+  newnc <- nc_open(newncfile, write = TRUE)
+  
+  fullnc_range <- ncvar_get(pixcnc, "pixel_cloud/range_index")
+  fullnc_azim <- ncvar_get(pixcnc, "pixel_cloud/azimuth_index")
+  fullnc_rangeazim <- fullnc_range * 1e5 + fullnc_azim
+  
+  df_rangeazim <- with(wfracdf, range_index * 1e5 + azimuth_index)
+  
+  rangeazim_match <- match(df_rangeazim, fullnc_rangeazim)
+  
+  newalphahat <- rep(NA_real_, nrow(wfracdf))
+  newsigalpha <- rep(NA_real_, nrow(wfracdf))
+  pbar <- progress::progress_bar$new(total = nrow(wfracdf))
+  for (i in 1:length(newalphahat)) {
+    # indi <- rangeazim_match[i]
+    indi <- i
+    rowi <- wfracdf[indi, ]
+    momsi <- wfrac_moments(p = rowi$coherent_power, mu_w = rowi$mu_w,
+                           mu_l = rowi$mu_l, nlooks = 4, method = method)
+    
+    newalphahat[indi] <- momsi$mean
+    newsigalpha[indi] <- momsi$sd
+    pbar$tick()
+  }
+  
+  alphahatvecs[[method]] <- newalphahat
+  sigalphavecs[[method]] <- newalphahat
+  
+  alphahat_toput <- ncvar_get(pixcnc, "pixel_cloud/water_frac")
+  alphahat_toput[rangeazim_match] <- newalphahat
+  
+  sigalpha_toput <- ncvar_get(pixcnc, "pixel_cloud/water_frac_uncert")
+  sigalpha_toput[rangeazim_match] <- newsigalpha
+
+  # testinds <- sample(rangeazim_match, 200)
+  # plot(alphahat_toput[testinds], 
+  #      ncvar_get(pixcnc, "pixel_cloud/water_frac")[testinds]); abline(0, 1)
+  
+  ncvar_put(newnc, "pixel_cloud/water_frac", alphahat_toput)
+  ncvar_put(newnc, "pixel_cloud/water_frac_uncert", sigalpha_toput)
+  nc_close(newnc)
+  nc_close(pixcnc)
+  
+}
+
+alphahatvecs %>% 
+  sample_n(400) %>% 
+  pairs()
+
+sigalphavecs %>% 
+  sample_n(400) %>% 
+  pairs()
+
+
+```
+
+Good. Next step is to run through riverobs. 

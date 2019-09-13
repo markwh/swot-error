@@ -1,0 +1,277 @@
+---
+title: "notebook20190815"
+author: "Mark Hagemann"
+date: "8/15/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Investigating effect of spatial regularization on node-level errors.
+
+Slides showing:
+
+- errors (raw and scaled)
+- corresponding nodes
+- trace a single feature--an island or similar. Show where pixc sees it and does not see it.
+
+
+```{r}
+valdf1 <- rt_valdata("../output/area-error/orig_si_new/frac/")
+badnodes(valdf1, which = "max")
+badnodes(valdf1, which = "max", standardize = TRUE)
+
+
+pixdf1 <- join_pixc("../output/area-error/orig_si_new/composite/", 
+                    pixcname = "../../pixel_cloud_orig_si.nc")
+
+pixdf1_gdem <- join_pixc("../output/area-error/orig_si_new/composite/", 
+                         pcvname = "pcv_gdem.nc",
+                    pixcname = "../../fake_pixc.nc")
+
+plotnodes <- 75:85
+plotnodes <- 95:105
+pixdf1 %>% 
+  filter(node_index %in% plotnodes) %>% 
+  ggplot(aes(
+        # x = range_index, y = azimuth_index, 
+    x = longitude_vectorproc, y = latitude_vectorproc,
+             color = classification)) + 
+  geom_point()
+
+pixdf1_gdem %>% 
+  filter(node_index %in% plotnodes) %>% 
+  ggplot(aes(
+            # x = range_index, y = azimuth_index, 
+    x = longitude_vectorproc, y = latitude_vectorproc,
+             color = classification)) + 
+  geom_point()
+```
+
+May be easier to see as leaflet. 
+
+```{r}
+
+classpal <- colorFactor("Dark2", pixdf1$classification)
+pixdf1 %>% 
+  filter(node_index %in% plotnodes) %>% 
+  leaflet() %>% 
+  addTiles() %>% 
+  addCircles(~longitude_vectorproc, ~ latitude_vectorproc,
+             radius = ~sqrt(pixel_area / pi) * water_frac,
+             stroke = FALSE, fillColor = ~classpal(classification),
+             fillOpacity = 0.8)
+
+```
+
+I'd like to do something side-by-side. Make it interactive, but bail on area sizing.
+
+Crosstalk doesn't appear capable of doing the rezooming each time, and I don't want to build a whole shiny app. Instead, make a gallery of river sections where this is a problem. 
+
+In order to do this properly, I first need to rerun riverobs for "manuscript" runs. And I need to do it 3 times--simple, water fraction, composite.
+
+
+
+## Rerun "manuscript" runs--fix pixel cloud, do 3 different aggregation methods. 
+
+```{r}
+redonos <- ro_manifest() %>% 
+  filter(notes == "manuscript") %>% 
+  pull(outno)
+
+unname(rodir(redonos))
+
+```
+
+
+- Did I put the sigma update into a function yet?
+  - Doesn't look like it. Do that now!
+  
+```{r}
+update_pixc <- function(pixcfile, newfile = "pixel_cloud_new.nc", nlooks = 4) {
+  stopifnot(file.exists(pixcfile))
+  putdir <- normalizePath(paste0(pixcfile, "/.."))
+  putfile <- file.path(putdir, newfile)
+  file.copy(pixcfile, putfile)
+  
+  orignc <- nc_open(pixcfile)
+  on.exit(nc_close(orignc))
+  
+  newnc <- nc_open(putfile, write = TRUE)
+  on.exit(nc_close(newnc))
+  
+  origsigalpha <- ncvar_get(orignc, "pixel_cloud/water_frac_uncert")
+  scalefactor <- sqrt(nlooks^3 / (nlooks - 1)^2 / (nlooks - 2))
+  newsigalpha <- origsigalpha * scalefactor
+  ncvar_put(newnc, "pixel_cloud/water_frac_uncert", vals = newsigalpha)
+}
+
+update_pixc("../output/area-error/pixel_cloud.nc")
+
+nc1 <- nc_open("../output/area-error/pixel_cloud.nc")
+nc2 <- nc_open("../output/area-error/pixel_cloud_new.nc")
+
+start <- 1000
+count <- 1000
+sig1 <- ncvar_get(nc1, "pixel_cloud/water_frac_uncert", start = start, count = count)
+sig2 <- ncvar_get(nc2, "pixel_cloud/water_frac_uncert", start = start, count = count)
+
+plot(sig1, sig2, log = "xy"); abline(0, 1)
+summary(sig2 / sig1)
+
+
+nc_close(nc1)
+nc_close(nc2)
+
+```
+
+Great. Now do for all the manuscript directories.
+
+
+```{r}
+unname(rodir(redonos)) %>% 
+  path(., "pixel_cloud.nc") %>% 
+  setNames(., .) %>% 
+  map_lgl(file.exists)
+
+
+unname(rodir(redonos)) %>% 
+  path(., "pixel_cloud_new.nc") %>% 
+  unlink()
+  
+unname(rodir(redonos)) %>% 
+  path(., "pixel_cloud.nc") %>% 
+  map(possibly(~update_pixc(.), otherwise = ~warning(.)))
+```
+
+Alright, that's done. I also changed the `rodir()` function to be more flexible--able to pass a subdirectory (passed to `fs::path()`)
+
+```{r}
+redonos
+```
+
+Right. Next, look at only "frac" and "composite" for roruns with no layover. Filter out bad nodes as best I can. Each slide should show: 
+
+- section of pixc map with
+- scatterplots of errors with nodes highlighted
+- indication of day, pass, node IDs
+
+
+```{r}
+
+slideplot_map <- function(pixdf, pixdf_gdem, nodeno, 
+                          gdsize = 0.5, pixcsize = 5 * gdsize, scale = FALSE) {
+  
+  
+  pixdf <- pixdf %>% 
+    mutate(sizescale = 1)
+  if (scale) pixdf$sizescale <- pixdf$water_frac
+  # print(head(pixdf$sizescale))
+  mapgg <- pixdf %>% 
+    mutate(classification = as.factor(classification)) %>% 
+    ggplot() + 
+    geom_point(aes(x = longitude, y = latitude,
+                   alpha = alpha),
+               color = "black",
+               data = pixdf_gdem, size = gdsize, shape = 20) +
+    geom_point(aes(x = longitude_vectorproc, y = latitude_vectorproc,
+                   alpha = alpha, 
+                   color = classification, 
+                   size = pixcsize * sizescale),
+               shape = 20) + 
+    scale_alpha_identity() +
+    scale_size_identity() +
+    theme_bw() + 
+    coord_map() + 
+    ggtitle(sprintf("node %s", nodeno))
+  mapgg
+}
+
+source("../../rtvalidate/R/validate.R")
+
+slide_plots <- function(nodevaldf, pixdf, pixdf_gdem, badrank = 1,
+                        gdsize = 0.5, pixcsize = 5 * gdsize,
+                        savedir, ...) {
+  shownode <- badnodes(nodevaldf, n = badrank, standardize = TRUE)[badrank]
+  
+  pixdf <- filter(pixdf, node_index %in% (shownode + -5:5)) %>% 
+    mutate(notnode = node_index != shownode,
+           alpha = ifelse(notnode, 0.1, 0.6), 
+           )
+  pixdf_gdem <- filter(pixdf_gdem, node_index %in% (shownode + -5:5)) %>% 
+    mutate(notnode = node_index != shownode,
+           alpha = ifelse(notnode, 0.1, 1))
+  
+  if (!dir.exists(savedir)) fs::dir_create(savedir)
+  
+  mapgg1 <- slideplot_map(pixdf = pixdf, pixdf_gdem = pixdf_gdem,
+                          nodeno = shownode)
+  mapfilename1 <- sprintf("%s/map%s.png", savedir, badrank)
+  mapgg2 <- slideplot_map(pixdf = pixdf, pixdf_gdem = pixdf_gdem, 
+                          nodeno = shownode,
+                          scale = TRUE)
+  mapfilename2 <- sprintf("%s/map%s_scaled.png", savedir, badrank)
+  ggsave(filename = mapfilename1, plot = mapgg1, ...)
+  ggsave(filename = mapfilename2, plot = mapgg2, ...)
+
+  
+  scattergg <- rt_val_scatter(nodevaldf, "width", yvar = "relerr", plot = FALSE) %>% 
+    ggplot(aes(x = node_id, y = yval, 
+               color = node_id == shownode, size = node_id == shownode)) +
+    geom_point() + 
+    theme_bw() + 
+    theme(legend.position = "none") +
+    scale_color_discrete() +
+    ggtitle(sprintf("node %s", shownode))
+  
+  scatterfilename <- sprintf("%s/scatter%s.png", savedir, badrank)
+  ggsave(filename = scatterfilename, plot = scattergg, ...)
+}
+
+slideplots_all <- function(dir, savedir, n = 6) {
+  pixdf <- join_pixc(dir, pixcname = "../pixel_cloud.nc")
+  pixdf_gdem <- join_pixc(dir, pixcname = "../fake_pixc.nc", 
+                          pcvname = "pcv_gdem.nc")
+  nodevaldf <- rt_valdata(dir)
+
+  for (i in 1:n) {
+    slide_plots(nodevaldf = nodevaldf, pixdf = pixdf, 
+                pixdf_gdem = pixdf_gdem, badrank = i, savedir = savedir)
+  }
+}
+
+
+slideplots_all(rodir(redonos[1], "frac"), 
+               savedir = sprintf("../fig/spatial_reg_figs/%s", redonos[1]))
+
+```
+
+Nice! Now a further for loop for the others. 
+
+```{r}
+for (agg_method in c("composite", "frac")) {
+  for (rorun in redonos) {
+    if (rorun == 74 || rorun == 87) next
+    cat(agg_method, rorun, "\n", sep = ": ")
+    indir <- rodir(rorun, agg_method)
+    savedir <- sprintf("../fig/spatial_reg_figs/%s/%s", agg_method, rorun)
+    if (dir.exists(savedir)) next
+    try(slideplots_all(indir, savedir))
+  }
+}
+```
+
+That's good. Put them into some slides? 
+
+```{r, results="asis"}
+
+library(knitr)
+include_graphics("../fig/spatial_reg_figs/frac/65/map1.png")
+include_graphics("../fig/spatial_reg_figs/frac/65/scatter1.png", dpi = 500)
+```
+
+
+
+

@@ -1,0 +1,38 @@
+---
+title: "notebook20190808"
+author: "Mark Hagemann"
+date: "8/8/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Today:
+
+1. Prep for river processing telecon
+2. Reorganize code--put stuff from notebook into src/ and lib/
+
+
+
+### Prep for river processing telecon
+
+- Show problem with area
+  - qqplot, how to read
+    - different phenomena
+  - upshot at reach scale
+- attempts at addressing water fraction uncertainty
+  - outline of steps taken
+  - resulting qqplots
+  - best: original alpha hat, modified uncertainty
+  - show resulting reach-level plots
+- Attempts at addressing heavy tail
+  - leaflet plots
+- differentiate heavy tail from true outliers
+- Next steps
+  - Call water fraction good
+  - get input on heavy tail
+  
+  
+  

@@ -1,0 +1,192 @@
+---
+title: "notebook20190816"
+author: "Mark Hagemann"
+date: "8/16/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+I'm still investigating node-level errors using pixel-level visualizations. 
+
+I think it would be useful to have a function to generate plots as I've done the past coupld of days. Inputs: joined pixel cloud, nodes, buffer, scale or not, real area or not. 
+
+```{r}
+
+library(ggforce)
+#' convert meters to lat/lon distance, approximately
+to_latlon <- function(x, lat, lon) {
+  lon_m <- cos(lat * pi / 180) * 110567
+  lat_m <- 111000 # approximately
+  out <- x * sqrt(1 / (lat_m * lon_m))
+  out
+}
+
+#' @param ... passed to \code{geom_point()} or \code{geom_circle()}
+map_node_pixc <- function(pixdf, 
+                          nodes, 
+                          gdemdf = NULL,
+                          buffer = 5, scale = FALSE, 
+                          real_area = FALSE, 
+                          gdsize = 0.5, pixcsize = 5 * gdsize,
+                          ...) {
+    
+  pixdf <- pixdf %>% 
+    filter(node_index %in% (nodes + -buffer:buffer)) %>% 
+    mutate(sizescale = 1,
+           classification = as.factor(classification),
+           innodes = node_index %in% nodes,
+           alpha = ifelse(innodes, 0.75, 0.3),
+           radius_m = sqrt(pixel_area / pi),
+           radius_ll = to_latlon(radius_m, 
+                                 latitude_vectorproc, 
+                                 longitude_vectorproc))
+  
+  if (scale) {
+    pixdf <- pixdf %>% 
+      mutate(sizescale = water_frac,
+             radius_ll = radius_ll * water_frac)
+  }
+  
+  if (!is.null(gdemdf)) {
+    gdemdf <- gdemdf %>% 
+      filter(node_index %in% (nodes + -buffer:buffer)) %>% 
+      mutate(innodes = node_index %in% nodes,
+             alpha = ifelse(innodes, 1, 0.3),
+             radius_m = sqrt(pixel_area / pi),
+             radius_ll = to_latlon(radius_m, latitude, longitude))
+  }
+    
+  # Calculate actual pixel sizes, if directed to.
+  if (real_area) {
+    # convert pixel area to radius in meters, then to lat/lon
+    pixradius_m <- sqrt(pixdf$pixel_area / pi)
+    gdradius_m <- sqrt(gdemdf$pixel_area / pi)
+    
+    pixdf <- pixdf %>% 
+      mutate(radius_ll = to_latlon(pixradius_m, 
+                                   latitude_vectorproc, 
+                                   longitude_vectorproc))
+    if (scale) pixdf$radius_ll <- pixdf$radius_ll * pixdf$water_frac
+  } 
+  
+
+  # Construct ggplot object
+  mapgg <- pixdf %>% 
+    ggplot()
+  
+  # add truth, if supplied.
+  if (!is.null(gdemdf)) {
+    if (real_area) {
+      
+
+    } else {
+
+    }
+  }
+  
+  if (real_area) {
+    if (!is.null(gdemdf)) {
+      mapgg <- mapgg + 
+        geom_circle(aes(x0 = longitude, y0 = latitude,
+                        r = radius_ll,
+                 alpha = alpha),
+             fill = "black", n = 6,
+             data = gdemdf, size = gdsize, linetype = 0)
+    }
+    
+    
+    mapgg <- mapgg + 
+      geom_circle(aes(x0 = longitude_vectorproc, y0 = latitude_vectorproc,
+                     alpha = alpha, 
+                     fill = classification, 
+                     r = radius_ll),
+                  n = 8, linetype = 0)
+  } else { # use points instead of circles
+    if (!is.null(gdemdf)) {
+      mapgg <- mapgg + 
+        geom_point(aes(x = longitude, y = latitude,
+             alpha = alpha),
+             color = "black",
+             data = gdemdf, size = gdsize)
+    }
+    
+    
+    mapgg <- mapgg + 
+      geom_point(aes(x = longitude_vectorproc, y = latitude_vectorproc,
+                     alpha = alpha, 
+                     color = classification, 
+                     size = pixcsize * sizescale),
+                 shape = 20) + 
+            scale_size_identity()
+    
+  }
+  
+  mapgg <- mapgg + 
+    scale_alpha_identity() +
+    coord_map()
+    
+  mapgg
+}
+
+pixdf <- join_pixc(rodir(80, "composite"), pixcname = "../pixel_cloud.nc")
+gdemdf <- join_pixc(rodir(71, "composite"), pixcname = "../fake_pixc.nc", 
+                    pcvname = "pcv_gdem.nc")
+
+
+
+map_node_pixc(pixdf, 388, gdemdf, buffer = 2, real_area = TRUE, scale = TRUE) + 
+  theme_bw()
+
+```
+
+I'm reasonably happy with that. What to do with it now? Fit into the general workflow--
+
+
+```{r}
+runno %>% 
+  rodir() %>% 
+  join_pixc() %>% 
+  connect_updown %>% 
+  run_riverobs()
+
+connected <- us_ds(pixdf, "midstream", verbose = TRUE)
+
+pixdf %>% 
+  filter(connected$connected) %>% 
+  map_node_pixc(388, buffer = 2, real_area = TRUE, scale = TRUE) + 
+  theme_bw()
+```
+
+I think my update to `us_ds` works! See if it gives similar results for more interesting cases. 
+
+```{r}
+runno <- 82
+agg <- "composite"
+node <- 68
+
+pixdf <- rodir(runno, agg) %>% 
+  join_pixc(pixcname = "../pixel_cloud.nc")
+
+connected1 <- us_ds(pixdf, "midstream", verbose = TRUE)
+connected2 <- us_ds(pixdf, "ends", verbose = TRUE)
+
+
+pixdf %>% 
+  map_node_pixc(node, real_area = TRUE, scale = TRUE) + 
+  theme_bw()
+
+pixdf %>% 
+  filter(connected1$connected) %>% 
+  map_node_pixc(node, real_area = TRUE, scale = TRUE) + 
+  theme_bw()
+
+pixdf %>% 
+  filter(connected2$connected) %>% 
+  map_node_pixc(node, real_area = TRUE, scale = TRUE) + 
+  theme_bw()
+```
+
+Cool! This way I can flag out weird geometry--and quickly. 

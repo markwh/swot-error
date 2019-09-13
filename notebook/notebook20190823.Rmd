@@ -1,0 +1,246 @@
+---
+title: "notebook20190823"
+author: "Mark Hagemann"
+date: "8/23/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+I'm working today on manuscript figures.
+
+Need to track down why area and width errors look so different at reach scale. 
+
+```{r}
+ro_manifest() %>% 
+  filter(day == 131, notes == "manuscript") %>% glimpse() 
+
+rodir(71, "composite") %>% 
+  rt_valdata(group = "reaches") %>% 
+  rt_val_scatter(variables = c("width", "area_total"), yvar = "relerr")
+
+rodir(71, "composite") %>% 
+  rt_valdata(group = "reaches") %>% 
+  rt_val_scatter(variables = c("width", "area_total"), yvar = "err")
+
+
+```
+
+```{r}
+rodir(71, "composite/rt.nc") %>% 
+  # rt_valdata() %>%
+  rt_read() %>% 
+  glimpse() %>% 
+  filter(reach_id == 6) %>% 
+  mutate(radius = sqrt(area_total / pi)) %>% 
+  leaflet() %>% 
+  addTiles() %>% 
+  addCircles(radius = ~radius, popup = ~paste(node_id))
+  
+```
+
+```{r}
+
+pixc71 <- rodir(71, "composite", "pixel_cloud_new.nc") %>% 
+  pixc_read()
+pcv71 <- rodir(71, "composite", "pcv.nc") %>% pixcvec_read()
+
+gdpixc71 <- rodir(71, "fake_pixc.nc") %>% 
+  pixc_read()
+gdpcv71 <- rodir(71, "composite", "pcv_gdem.nc") %>% pixcvec_read()
+
+gdpix71 <- pixc_join(gdpixc71, gdpcv71)
+
+nodeval71 <- rodir(71, "composite") %>% 
+  rt_valdata()
+
+pixc71 %>% 
+  pixc_join(pcv71) %>% 
+  map_node_pixc(nodes = 437, gdemdf = gdpix71)
+```
+
+How exactly does reach area relate to width? Right, it's a simple scaling by node length, which I don't have. But I can compute pretty easily. 
+
+```{r}
+rtnode71 <- rodir(71, "composite", "rt.nc") %>% 
+  rt_read()
+
+gdnode71 <- rodir(71, "composite", "rt_gdem.nc") %>% 
+  rt_read()
+
+rtnodelens <- rtnode71 %>% 
+  add_nodelen(force = TRUE) %>% 
+  select(node_id, nodelen)
+
+gdnodelens <- gdnode71 %>% 
+  add_nodelen(force = TRUE) %>% 
+  select(node_id, nodelen)
+
+inner_join(rtnodelens, gdnodelens, by = "node_id") %>% 
+  filter(node_id > min(node_id), node_id < max(node_id)) %>% 
+  mutate(len_diff = nodelen.x - nodelen.y) %>% 
+  ggplot(aes(x = node_id, y = len_diff)) + 
+  geom_point()
+
+list(rt = rtnodelens, gdem = gdnodelens) %>% 
+  bind_rows(.id = "source") %>% 
+  filter(node_id > min(node_id), node_id < max(node_id)) %>% 
+  ggplot(aes(x = node_id, y = nodelen, color = source)) +
+  geom_point()
+
+```
+
+Areas now (the other component of width calculation)
+
+```{r}
+rtareas <- rtnode71 %>% 
+  select(node_id, area_total)
+
+gdareas <- gdnode71 %>% 
+  select(node_id, area_total)
+
+inner_join(rtareas, gdareas, by = "node_id") %>% 
+  filter(node_id > min(node_id), node_id < max(node_id)) %>% 
+  mutate(area_diff = area_total.x - area_total.y) %>% 
+  ggplot(aes(x = node_id, y = area_diff)) + 
+  geom_point()
+
+list(rt = rtareas, gdem = gdareas) %>% 
+  bind_rows(.id = "source") %>% 
+  filter(node_id > min(node_id), node_id < max(node_id)) %>% 
+  ggplot(aes(x = node_id, y = area_total, color = source)) +
+  geom_point()
+```
+
+
+
+
+```{r}
+rtreach0 <- rodir(71, "composite", "rt.nc") %>% 
+  rt_read(group = "reaches")
+gdreach0 <- rodir(71, "composite", "rt_gdem.nc") %>% 
+  rt_read(group = "reaches")
+
+rtreach <- rtnode71 %>% 
+  add_nodelen(force = TRUE) %>% 
+  add_offset(rtreach0) %>% 
+  reach_agg(weight = FALSE)
+
+gdreach <- gdnode71 %>% 
+  add_nodelen(force = TRUE) %>% 
+  add_offset(gdreach0) %>% 
+  reach_agg(weight = FALSE)
+
+rtreach %>% 
+  ggplot(aes(x = reach_id, y = area_total)) + 
+  geom_point() + 
+  geom_point(data = gdreach, color = "red")
+
+```
+
+
+
+What happens when nodes are missing from the reach? 
+
+- reach area = sum(node area) for nodes in reach
+- reach width = sum(node area) / sum(node length) for nodes in reach
+
+
+Plot my aggregated reach against read-in reach. Ditto for width. 
+
+```{r}
+reachdf_compare <- list(orig = rtreach0, redid = rtreach) %>% 
+  bind_rows(.id = "method") %>% 
+  select(method, reach_id, area_total, width, area_tot_u, width_u)
+
+reachdf_compare %>% 
+  ggplot(aes(x = reach_id, y = area_total, color = method)) + 
+  geom_point()
+
+reachdf_compare %>% 
+  ggplot(aes(x = reach_id, y = width, color = method)) + 
+  geom_point()
+
+```
+
+What's going on with reach 1?
+
+```{r}
+rtnode71 %>% 
+  filter(reach_id == 1) %>% 
+  # summary() %>% 
+  add_nodelen(force = TRUE) %>% 
+  summarize(area = sum(area_total), length = sum(nodelen), width = area / length)
+
+rtreach0 %>% 
+  filter(reach_id == 1) %>% 
+  select(area_total, width)
+```
+
+OK, fixed a bug in add_nodelen()
+
+Mabye if I do reach_agg and then rt_valdata_df()
+
+```{r}
+rt_valdata_df(rtreach, gdreach) %>% 
+  rt_val_scatter(variables = c("width", "area_total"), yvar = "relerr")
+```
+
+No...
+
+If area error is positive, width area should also be positive, unless reach length is different. 
+
+```{r}
+rtreachlens <- rtnode71 %>% 
+  add_nodelen(force = TRUE) %>% 
+  select(node_id, reach_id, nodelen) %>% 
+  group_by(reach_id) %>% 
+  summarize(reachlen = sum(nodelen))
+
+gdreachlens <- gdnode71 %>% 
+  add_nodelen(force = TRUE) %>% 
+  select(node_id, reach_id, nodelen) %>% 
+  group_by(reach_id) %>% 
+  summarize(reachlen = sum(nodelen))
+
+list(rt = rtreachlens, gdem = gdreachlens) %>% 
+  bind_rows(.id = "source") %>% 
+  # filter(node_id > min(node_id), node_id < max(node_id)) %>% 
+  ggplot(aes(x = reach_id, y = reachlen, color = source)) +
+  geom_point()
+```
+
+Conclusion: I should subset to intersection of node id's before doing reach_agg(). OK, I added a "usenodes" argument to reach_agg().
+
+```{r}
+rtreach <- rtnode71 %>% 
+  add_nodelen(force = TRUE) %>% 
+  add_offset(rtreach0) %>% 
+  reach_agg(weight = FALSE)
+
+gdreach <- gdnode71 %>% 
+  filter(node_id %in% rtnode71$node_id) %>% 
+  add_nodelen(force = TRUE) %>% 
+  add_offset(gdreach0) %>% 
+  reach_agg(weight = FALSE)
+
+
+rt_valdata_df(rtreach, gdreach) %>% 
+  rt_val_scatter(variables = c("width", "area_total"), yvar = "relerr")
+```
+
+
+Note: neither version of reach validation was previously correct! I'll likely have to manually edit the fake pixel clouds--or just exclude reach 7. Although--why is reach 6 so bad? Nodes missing here?
+
+```{r}
+list(rt = rtnode71, gd = gdnode71) %>% 
+  bind_rows(.id = "source") %>% 
+  filter(reach_id == 6) %>% 
+  ggplot(aes(x = node_id, y = area_total)) +
+  geom_point() + 
+  facet_grid(rows = vars(source))
+```
+
+Yes, that appears to be the issue. Finally, I can move on to writing. 

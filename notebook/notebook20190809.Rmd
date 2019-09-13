@@ -1,0 +1,213 @@
+---
+title: "notebook20190809"
+author: "Mark Hagemann"
+date: "8/9/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+For today's show-and-tell meeting, present a single qq plot showing composite + simple + water fraction methods validation at node level, both for "orig" and "orig-si" methods. 
+
+### orig-si
+
+```{r}
+sival_simple <- rt_valdata("../output/area-error/orig_si/simple/")
+sival_composite <- rt_valdata("../output/area-error/orig_si/composite/")
+sival_frac <- rt_valdata("../output/area-error/orig_si/frac/")
+
+bind_rows(composite = sival_composite, 
+          frac = sival_frac, 
+          simple = sival_simple, .id = "method") %>% 
+  filter(variable == "area_total") %>% 
+    rt_val_qq(groupvars = "method") +
+  facet_wrap(~method)
+
+```
+
+### orig
+
+```{r}
+origval_simple <- rt_valdata("../output/area-error/orig/simple/")
+origval_composite <- rt_valdata("../output/area-error/orig/composite/")
+origval_frac <- rt_valdata("../output/area-error/orig/frac/")
+
+bind_rows(composite = origval_composite, 
+          frac = origval_frac, 
+          simple = origval_simple, .id = "method") %>% 
+  filter(variable == "area_total") %>% 
+    rt_val_qq(groupvars = "method") +
+  facet_wrap(~method)
+
+```
+
+Why is "simple" method different betwen orig and orig_si?
+
+
+```{r}
+simparea_o <- origval_simple %>% 
+  filter(variable == "area_total")
+
+simparea_s <- sival_simple %>% 
+  filter(variable == "area_total")
+
+list(orig = simparea_o, orig_si = simparea_s) %>% 
+  bind_rows(.id = "method") %>% 
+  ggplot(aes(x = node_id, y = pixc_err)) +
+  geom_point(aes(color = method))
+
+list(orig = simparea_o, orig_si = simparea_s) %>% 
+  bind_rows(.id = "method") %>% 
+  ggplot(aes(x = node_id, y = sigma_est)) +
+  geom_point(aes(color = method))
+
+```
+
+
+Right, the estimates are the same, but area_tot_u is different, hence different scaled errors. But why would water_frac_uncert come into play for simple method? 
+
+- Re-run simple versions, see if anything changes. 
+- Play with use_fractional_inundation?
+
+This is some wild stuff. Finding bugs in the code
+
+- method coerced to "composite" when calculating uncertainty
+- std_composite has wrong indent
+- std_wd should be std_dw. 
+
+Here's using different uncert methods (not all composite)
+
+
+```{r}
+origval_simple_new <- rt_valdata("../output/area-error/orig_new/simple/")
+origval_composite_new <- rt_valdata("../output/area-error/orig_new/composite/")
+origval_frac_new <- rt_valdata("../output/area-error/orig_new/frac/")
+
+bind_rows(composite = origval_composite_new, 
+          frac = origval_frac_new, 
+          simple = origval_simple_new, .id = "method") %>% 
+  filter(variable == "area_total") %>% 
+    rt_val_qq(groupvars = "method") +
+  facet_wrap(~method)
+```
+
+
+```{r}
+sival_simple_new <- rt_valdata("../output/area-error/orig_si_new/simple/")
+sival_composite_new <- rt_valdata("../output/area-error/orig_si_new/composite/")
+sival_frac_new <- rt_valdata("../output/area-error/orig_si_new/frac/")
+
+bind_rows(composite = sival_composite_new, 
+          frac = sival_frac_new, 
+          simple = sival_simple_new, .id = "method") %>% 
+  filter(variable == "area_total") %>% 
+    rt_val_qq(groupvars = "method") +
+  facet_wrap(~method)
+```
+
+
+Reach-level results now. 
+
+```{r}
+basedir_new <- "../output/area-error/orig_si_new/frac/"
+rtncfile_new <- path(basedir_new, "rt.nc")
+rtncfile_truth_new <- path(basedir_new, "rt_gdem.nc")
+
+reachdf_new <- rt_read(rtncfile_new, group = "reaches", keep_na_vars = TRUE)
+truthdf_new <- rt_read(rtncfile_truth_new, group = "reaches", keep_na_vars = TRUE)
+
+valmap <- c(wse = "wse_r_u", area_total = "area_tot_u", 
+            slope = "slope_r_u", width = "width_u")
+
+uncdf_new <- reachdf_new %>% 
+  # glimpse() %>% 
+  select(reach_id, wse_r_u, area_tot_u, slope_r_u, width_u) %>% 
+  gather(key = "variable", value = "sigma_est", -reach_id) %>% 
+  mutate(variable = plyr::mapvalues(variable, from = valmap, 
+                                    to = names(valmap)))
+
+estdf_new <- reachdf_new %>% 
+  # glimpse() %>% 
+  select(reach_id, wse, area_total, slope, width) %>% 
+  gather(key = "variable", value = "est", -reach_id) %>% 
+  left_join(uncdf_new, by = c("reach_id", "variable"))
+
+reachvaldf_new <- truthdf_new %>% 
+  select(reach_id, wse, area_total, slope, width) %>% 
+  gather(key = "variable", value = "truth", -reach_id) %>% 
+  left_join(estdf_new, by = c("reach_id", "variable")) %>% 
+  mutate(pixc_err = est - truth, 
+         relerr = (est - truth) / sigma_est)
+
+
+rt_val_scatter(reachvaldf_new, 
+               variables = c("width", "area_total", "wse", "slope"), 
+               yvar = "relerr")
+```
+
+
+Leaflet maps now.
+
+```{r}
+simple_pix <- join_pixc("../output/area-error/orig_si_new/frac/", 
+                        pixcname = "../../pixel_cloud_orig_si.nc")
+simple_pix_gdem <- join_pixc("../output/area-error/orig_si_new/frac/", 
+                             pcvname = "pcv_gdem.nc",
+                        pixcname = "../../fake_pixc.nc")
+
+library(leaflet)
+
+badnodes_new <- badnodes(sival_frac_new, n = 4, which = "min")
+
+pixdf1 <- simple_pix %>% 
+  filter(node_index %in% badnodes_new) %>% 
+  transmute(azimuth_index, range_index, node_index, reach_index,
+            lat_med = latitude, lon_med = longitude,
+            lat_wd = latitude_vectorproc, lon_wd = longitude_vectorproc,
+            water_frac, water_frac_uncert,
+            classification, fdr = false_detection_rate, 
+            mdr = missed_detection_rate, Pw = prior_water_prob,
+            pixel_area)
+pixdf2 <- simple_pix_gdem %>% 
+  filter(node_index %in% badnodes_new) %>% 
+  transmute(azimuth_index, range_index, node_index, reach_index,
+            lat_gdem = latitude, lon_gdem = longitude, pixel_area)
+
+classpal <- colorFactor("Dark2", pixdf1$classification)
+
+leaflet_scaled <- leaflet() %>% 
+  addTiles() %>% 
+  addCircles(~lon_gdem, ~lat_gdem, 
+             radius = ~sqrt(pixel_area / pi),
+             fillColor = "black", fillOpacity = 1, stroke = FALSE, 
+             data = pixdf2) %>% 
+  addCircles(~lon_wd, ~lat_wd, radius = ~sqrt(pixel_area / pi * water_frac),
+             fillColor = ~classpal(classification), stroke = FALSE, 
+             fillOpacity = 0.6, data = pixdf1, 
+             popup = ~paste("node: ", node_index))
+
+leaflet_scaled
+```
+
+Add an "allfrac" (all classes use water fraction) and rerun. 
+
+```{r}
+sival_simple_new <- rt_valdata("../output/area-error/orig_si_new/simple/")
+sival_composite_new <- rt_valdata("../output/area-error/orig_si_new/composite/")
+sival_frac_new <- rt_valdata("../output/area-error/orig_si_new/frac/")
+sival_allfrac_new <- rt_valdata("../output/area-error/orig_si_new/allfrac/")
+
+
+bind_rows(composite = sival_composite_new, 
+          frac = sival_frac_new, 
+          allfrac = sival_allfrac_new,
+          simple = sival_simple_new, .id = "method") %>% 
+  filter(variable == "area_total") %>% 
+    rt_val_qq(groupvars = "method") +
+  facet_wrap(~method, scales = "free_y")
+```
+
+I think this is good for now. Next challenge: quickly apply the same analysis to multiple runs. 

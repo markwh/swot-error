@@ -1,0 +1,203 @@
+---
+title: "notebook20190821"
+author: "Mark Hagemann"
+date: "8/21/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Looking today at usds connected riverobs results. 
+
+```{r}
+
+pcvi <- rodir(65, "simple") %>% 
+  join_pixc("pcv_usds.nc", "pixel_cloud_new_usds.nc")
+pcvi_gdem <- rodir(65, "simple") %>% 
+  join_pixc("pcv_gdem_usds.nc", pixcname = "../fake_pixc_usds.nc")
+
+# unique(pcvi_gdem$node_index)
+
+library(ggforce)
+map_node_pixc(pcvi_gdem, 416, real_area = TRUE)
+```
+
+Don't get ahead of myself. First do the validation. 
+
+```{r}
+nodevaldf1 <- rt_valdata(rodir(65, "simple"), rtname = "rt_usds.nc", 
+                        gdname = "rt_gdem_usds.nc")
+
+nodevaldf2 <- rt_valdata(rodir(65, "simple"), rtname = "rt.nc", 
+                        gdname = "rt_gdem.nc")
+
+
+rt_val_scatter(nodevaldf1, "width", yvar = "relerr")
+rt_val_scatter(nodevaldf2, "width", yvar = "relerr")
+
+badnodes(nodevaldf1, "width", standardize = TRUE, which = "min")
+# map_node_pixc(pcvi, 587, gdemdf = pcvi_gdem, real_area = TRUE)
+map_node_pixc(pcvi, 683, gdemdf = pcvi_gdem, real_area = TRUE)
+```
+
+
+Time to go back to the usds algorithm and see what it's doing in this case.
+
+```{r}
+origpixdf <- rodir(65, "simple") %>% 
+  join_pixc(pixcname =  "pixel_cloud_new.nc") %>% 
+  left_join(us_ds(., start = "midstream"), by = c("range_index", "azimuth_index"))
+
+origpixdf %>% 
+  filter(node_index %in% (587 + -5:5)) %>% 
+  ggplot(aes(x = longitude_vectorproc, y = latitude_vectorproc)) +
+  geom_point(aes(color = connected)) +
+  coord_map()
+
+
+```
+
+Works fine now. Go back and repeat the code verbatim. 
+
+```{r}
+dir <- rodir(65, "simple")
+pixcfile <- fs::path(dir, "pixel_cloud_new.nc")
+pcvfile <- fs::path(dir, "pcv.nc")
+newfile <- "pixel_cloud_new_usds.nc"
+
+# # modified from update_pixc()
+# usds_pixc <- function(pixcfile, pcvfile, newfile = "pixel_cloud_usds.nc",
+#                       is_gdem = FALSE) {
+  stopifnot(file.exists(pixcfile))
+  putdir <- normalizePath(paste0(pixcfile, "/.."))
+  putfile <- file.path(putdir, newfile)
+  file.copy(pixcfile, putfile, overwrite = TRUE)
+  outnc <- nc_open(putfile, write = TRUE)
+  # on.exit(nc_close(outnc))
+  
+  origpixcnc <- nc_open(pixcfile)
+  # on.exit(nc_close(origpixcnc))
+  origpixcdf <- pixc_read(pixcfile) %>% 
+    mutate(rangeazim = range_index * 1e5 + azimuth_index)
+  origpcvdf <- pixcvec_read(pcvfile)
+  
+  subsetdf0 <- us_ds(origpcvdf) %>% filter(connected) %>% 
+    left_join(origpcvdf, by = c("range_index", "azimuth_index"))
+  rangeazim_587 <- subsetdf0 %>% 
+    filter(node_index == 587) %>% 
+    select(range_index, azimuth_index) %>% 
+    mutate(rangeazim = range_index * 1e5 + azimuth_index)
+  rangeazim_587 %>% 
+    ggplot(aes(x = range_index, y = azimuth_index)) + geom_point()
+  
+  matchra <- match(rangeazim_587$rangeazim, origpixcdf$rangeazim)
+  
+  
+  subsetdf0 %>% 
+    filter(node_index %in% (587 + -5:5)) %>% 
+    ggplot(aes(x = longitude_vectorproc, y = latitude_vectorproc)) +
+    geom_point(aes(color = connected)) +
+    coord_map()
+  
+  subsetdf <- subsetdf0 %>% 
+    select(range_index, azimuth_index) %>% 
+    mutate(rangeazim = range_index * 1e5 + azimuth_index)
+  # browser()
+  
+  keepdim <- match(subsetdf$rangeazim, origpixcdf$rangeazim)
+  
+  # Better approach: get the range and azimuth indices from us_ds(), 
+  # use these directly to match from netcdf. 
+  
+  ncrange <- ncvar_get(outnc, "pixel_cloud/range_index")
+  ncazim <- ncvar_get(outnc, "pixel_cloud/azimuth_index")
+  ncrangeazim <- ncrange * 1e5 + ncazim
+  
+  keepdim <- match(subsetdf$rangeazim, ncrangeazim)
+  
+  outclass <- ncvar_get(outnc, "pixel_cloud/classification")
+  
+  if (is_gdem) {
+    outclass[-keepdim] <- 0
+  } else {
+    outclass[-keepdim] <- 1
+  }
+  ncvar_put(outnc, "pixel_cloud/classification", outclass, 
+            start = 1, count = length(outclass))      
+
+  
+  checkdf <- data.frame(range_index = as.vector(ncrange),
+                        azimuth_index = as.vector(ncazim),
+                        class = as.vector(outclass)) %>% 
+    left_join(origpcvdf, by = c("range_index", "azimuth_index")) %>% 
+    filter(node_index %in% (587 + -5:5))
+  
+  checkdf %>% 
+    ggplot(aes(x = longitude_vectorproc, y = latitude_vectorproc, color = class)) + 
+    geom_point()
+# }
+
+nc_close(outnc)
+nc_close(origpixcnc)
+
+outnc2 <- nc_open(putfile, write = FALSE)
+checkdf2 <- data.frame(range_index = as.vector(ncrange),
+              azimuth_index = as.vector(ncazim),
+              class = as.vector(ncvar_get(outnc2, "pixel_cloud/classification"))) %>% 
+  left_join(origpcvdf, by = c("range_index", "azimuth_index")) %>% 
+  filter(node_index %in% (587 + -5:5))
+
+  
+  checkdf2 %>% 
+    ggplot(aes(x = longitude_vectorproc, y = latitude_vectorproc, color = class)) + 
+    geom_point()
+nc_close(outnc2)
+```
+
+OK, I've got it sorted. Verified it works for a single case. Now redo the netcdf creation and riverobs runs. 
+
+
+Meanwhile, get started on the slides I'll show tomorrow. And send them to Brent.
+
+- regularization issues in composite aggregation
+- Issues in water fraction aggregation
+- questionable truth
+
+Go through the map figs and select some cases. 
+
+- composite, regularization issue: 
+  - composite/68/map2 (node 286)
+  - composite/80/map1 (node 78)
+  - composite/80/map2 (node 372) -- this one has weird spatial otliers
+- Other issues: 
+  - composite/82/map1 (node 68)
+  - composite/68/map1 (node 567) -- this one is pretty meh. 
+- Water frac issues
+  - frac/82/map4 (node 38)
+
+Remake these ones to take advantage of new real_area argument.
+
+```{r}
+library(ggforce)
+compnos <-   c(68,  80, 80,  82, 68)
+compnodes <- c(286, 78, 372, 68, 567)
+
+fracnos <- c(82)
+fracnodes <- c(38)
+
+i <- 1
+runi <- compnos[i]
+nodei <- compnodes[i]
+
+pixdfi <- rodir(runi, "composite") %>% 
+  join_pixc()
+gdemdfi <- rodir(runi, "composite") %>% 
+  join_pixc(pcvname = "pcv_gdem.nc", pixcname = "../fake_pixc.nc")
+
+map_node_pixc(pixdf = pixdfi, nodes = nodei, gdemdf = gdemdfi, 
+              scale = FALSE, real_area = TRUE)
+```
+
+Eh, better to just use the original figs? I think so. 

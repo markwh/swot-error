@@ -53,6 +53,7 @@ Function to get specified variables for given range/azimuth index, similar to `i
 ```{r}
 intermed2pixc <- function(nc_inter, varids, pixcdf) {
 
+  
   varraylist <- lapply(varids, ncvar_get, nc = nc_inter, collapse_degen = FALSE)
   names(varraylist) <- if(is.null(names(varids))) varids else names(varids)
   
@@ -67,13 +68,15 @@ intermed2pixc <- function(nc_inter, varids, pixcdf) {
   # Make a joinable data.frame from 1st element in varraylist
   rownames(varraylist[[1]]) <- rowids - 1 # Adjust to match python-based indexing in pixc
   colnames(varraylist[[1]]) <- colids - 1
-
+  
+  
+  
   vardflist0 <- setNames(reshape2::melt(varraylist[[1]]), 
-                         c("azimuth_index", "range_index", 
+                         c("range_index", "azimuth_index", 
                            names(varraylist)[1])) %>% 
     mutate(range_index = as.numeric(range_index), 
            azimuth_index = as.numeric(azimuth_index))
-  
+  vardf <- vardflist0
   # melt the remaining varraylist elements, cbind to 1st
   if (length(varraylist) > 1) {
     vardflist1 <- lapply(varraylist[-1], function(x) reshape2::melt(x)[[3]])
@@ -86,6 +89,15 @@ intermed2pixc <- function(nc_inter, varids, pixcdf) {
   outdf <- inner_join(x = pixcdf, y = vardf, by = c("range_index", "azimuth_index"))
   outdf
 }
+
+testdf1 <- intermed2pixc(classnc_ss2, c(cohpow = "coherent_power"), pixcdf)
+# testdf1 <- outdf
+
+testdf1 %>% 
+  sample_n(100) %>% 
+  ggplot(aes(x = coherent_power, y= cohpow)) + geom_point()
+
+
 ```
 
 ~~Now a higher-level function to get only mu_w, mu_l, nefflooks, coh_power for a specified, or random, set of pixels.~~ I think I'll just do some simple processing of the output from `intermed2pixc()`--no need to put into a function. 
@@ -104,25 +116,217 @@ intermednc <- nc_open(path(testdir, "intermediate_class_maps_0.nc"))
 intermed_sset <- nc_subset(intermednc, num_lines %in% rangeinds, 
                            num_pixels %in% aziminds)
 
-testobs <- intermed2pixc(intermed_sset, 
+testobs_full <- intermed2pixc(intermed_sset, 
                          c(mu_w = "water_power", mu_l = "land_power"),
-                         pixcdf = pixcdf) %>% 
+                         pixcdf = pixcdf)
+testobs <- testobs_full %>% 
   transmute(range = range_index, azimuth = azimuth_index,
             coh_power = coherent_power, nefflooks = 4, mu_w, mu_l)
 
 ```
 
-Density and random sample generating functions
+### Density and random sample generating functions
 
 ```{r}
+#' @param x vector of water fractions. 
+
+
 dwfrac <- function(x, p, mu_w, mu_l, nlooks, 
-                   method = c("orig", "igapprox", "iguninf", "scaleinv")) {
+                   method = c("orig", "igapprox", "iguninf", 
+                              "scaleinv", "gamma-unif")) {
   method <- match.arg(method)
   
+  x_theta <- (x * (mu_w - mu_l) + mu_l) / nlooks # convert water frac to theta
   
+  if (method == "orig") {
+    meanwfrac <- (p - mu_l) / (mu_w - mu_l)
+    sdwfrac <- p / (mu_w - mu_l) / sqrt(nlooks)
+    out <- dnorm(x, mean = meanwfrac, sd = sdwfrac)
+  } else if (method == "igapprox") {
+    # Uniform prior moments
+    wfrachat_prior <- 0.5
+    wfracvar_prior <- 1 / 12
+    thetahat_prior <- (wfrachat_prior * (mu_w - mu_l) + mu_l) / nlooks
+    thetavar_prior <- wfracvar_prior * (mu_w - mu_l)^2 / (nlooks^2)
+    
+    # prior inverse gamma parameters on theta (by moment matching to unif)
+    alpha_prior <- thetahat_prior^2 / thetavar_prior + 2
+    beta_prior <- thetahat_prior * (thetahat_prior^2 / thetavar_prior + 1)
+    
+    # posterior parameters on theta (inverse gamma)
+    alpha_post <- alpha_prior + nlooks
+    beta_post <- beta_prior + p
+    
+    # inverse gamma density
+    out <- dgamma(1 / x_theta, shape = alpha_post, rate = beta_post)
+  } else if (method == "iguninf") {
+    # Same, just boost the variance to make "uninformative"
+    # Uniform prior moments
+    wfrachat_prior <- 0.5
+    wfracvar_prior <- 25
+    thetahat_prior <- (wfrachat_prior * (mu_w - mu_l) + mu_l) / nlooks
+    thetavar_prior <- wfracvar_prior * (mu_w - mu_l)^2 / (nlooks^2)
+    
+    # prior inverse gamma parameters on theta
+    alpha_prior <- thetahat_prior^2 / thetavar_prior + 2
+    beta_prior <- thetahat_prior * (thetahat_prior^2 / thetavar_prior + 1)
+    
+    # posterior parameters on theta (inverse gamma)
+    alpha_post <- alpha_prior + nlooks
+    beta_post <- beta_prior + p
+    
+    # inverse gamma density
+    out <- dgamma(1 / x_theta, shape = alpha_post, rate = beta_post)
+  } else if (method == "scaleinv") {
+    # scale-invariant prior
+    # posterior is inverse gamma -- limit as alpha, beta priors go to zero. 
+    out <- dgamma(1 / x_theta, shape = nlooks, scale = 1 / p)
+  } else if (method == "gamma-unif") {
+    # browser()
+    out <- rep(0, length(x_theta))
+    keep <- x >= 0 & x <= 1
+    out[keep] <- (x_theta[keep])^(-nlooks) * exp(-p / x_theta[keep])
+
+  } else {
+    stop(sprintf("method %s not recognized.\n", method))
+  }
   
-  
-  
+  out
 }
+
+# helper funcitons for posterior mean, variance of water frac
+igmean_wfrac <- function(alpha, beta, nlooks, mu_w, mu_l) {
+  igmean_theta <- beta / (alpha - 1)
+  out <- (nlooks * igmean_theta - mu_l) / (mu_w - mu_l)
+  out
+}
+
+igvar_wfrac <- function(alpha, beta, nlooks, mu_w, mu_l) {
+  igvar_theta <- beta^2 * (alpha - 1)^(-2) * (alpha - 2)^(-1)
+  out <- nlooks^2 * igvar_theta * (mu_w - mu_l)^(-2)
+  out
+}
+
+
 ```
 
+### Stan sampler for true gamma-uniform case
+
+```{r}
+gamunifmod1 <- stan_model("../src/gamma-unif.stan")
+gamunifmod2 <- stan_model("../src/gamma-unif2.stan")
+
+gamunifsampler <- function(p, mu_w, mu_l, nlooks, 
+                           ...,
+                           stanmodel = gamunifmod1) {
+  sampdata <- list(N = 1, y = structure(p, .Dim = 1L), 
+                   mu_l = mu_l, mu_w = mu_w, nlooks = nlooks)
+  samps <- sampling(stanmodel, data = sampdata, pars = "wfrac", 
+                  ...)
+  samps
+  out <- extract(samps, pars = "wfrac", inc_warmup = FALSE)
+  out
+}
+
+glimpse(testobs)
+
+foo <- with(testobs[1,], gamunifsampler(coh_power, mu_w, mu_l, nefflooks, 
+                                        cores = 2, chains = 2))
+
+bar <- with(testobs[2,], gamunifsampler(coh_power, mu_w, mu_l, nefflooks, 
+                                        stanmodel = gamunifmod2,
+                                        cores = 2, chains = 2))
+
+hist(foo$wfrac)
+hist(bar$wfrac)
+```
+
+
+### Pixel-level density plots (n = 12)
+
+```{r}
+
+## The following in case I need to recreate my original plot (before I set a seed)
+# orig_range <- c(2063, 2139, 1611, 1813, 1597, 2528, 
+#                 1725, 1344, 1745, 1420, 1619, 2612)
+# orig_azim <- c(3646, 4006, 2873, 3543, 3160, 477, 
+#                3280, 2704, 3328, 2352, 3124, 175)
+
+small_inds <- sample(1:nrow(testobs), 12)
+testobs_small <- testobs[small_inds, ]
+
+glimpse(testobs_small)
+# dwfrac vectors
+xvec <- 1:600 / 200
+
+# all curve values as data.frame for a given row of testobs_small
+
+allcurvefun <- function(tosrow, xvec) {
+  
+  cohpow <- tosrow$coh_power
+  muw <- tosrow$mu_w
+  mul <- tosrow$mu_l
+  nlook <- tosrow$nefflooks
+  allmethods <- c("orig", "igapprox", "iguninf", "scaleinv", "gamma-unif")
+  densveclist <- allmethods %>% 
+    purrr::map(~data.frame(x = xvec,
+                   density = dwfrac(xvec, p = cohpow, mu_w = muw, 
+                             mu_l = mul, nlooks = nlook, method = .))) %>% 
+    purrr::map(function(df) {df$density = df$density / max(df$density); df})
+  densvecdf <- dplyr::bind_rows(setNames(densveclist, allmethods),
+                                .id = "method")
+  densvecdf
+}
+
+allcurvedf <- testobs_small %>% 
+  split(f = 1:nrow(.)) %>% 
+  purrr::map(~allcurvefun(., -100:200 / 100)) %>% 
+  bind_rows(.id = "pixel") %>% 
+  mutate(wfrac = x,
+         pixel = as.factor(as.numeric(pixel)))
+
+allcurvedf %>% 
+  ggplot(aes(x = wfrac, y = density)) + 
+  geom_line(aes(color = method)) +
+  facet_wrap(~pixel)
+
+```
+
+### Pixel-level histograms. 
+
+```{r}
+standatas <- testobs_small %>% 
+  # glimpse() %>% 
+  split(f = 1:nrow(.)) %>% 
+  purrr::map(~gamunifsampler(.$coh_power, .$mu_w, .$mu_l, .$nefflooks, 
+                            cores = 2))
+
+standatas %>% 
+  purrr::map(~data.frame(wfrac = as.vector(.$wfrac))) %>% 
+  bind_rows(.id = "pixel") %>%
+  mutate(pixel = as.factor(as.numeric(pixel))) %>% 
+  ggplot(aes(x = wfrac)) + 
+  geom_histogram(aes(y = ..ncount..), breaks = 0:20 / 20) + 
+  geom_line(aes(y = density, color = method), data = allcurvedf, size = 1) +
+  facet_wrap(~pixel, ncol = 4) + 
+  theme_minimal() + 
+  theme(legend.position = "bottom", axis.title.y = element_blank(),
+        axis.text.y = element_blank(), axis.ticks.y = element_blank())
+
+ggsave("../fig/wfrac_methods_dens.png", height = 6, width = 8)
+```
+
+### Check-in
+
+- How close am I to results? 
+  - Dataset prepped? Check! (`testobs`)
+  - Density functions rerady? Check! (`dwfrac()`)
+  - Samplers ready? Check!
+  - Pixel-level plots, n = 12? Check!
+  - Pixel clouds using approximated gamma? 
+  
+
+
+  
+  
+  

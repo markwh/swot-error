@@ -1,0 +1,25 @@
+---
+title: "notebook20190829"
+author: "Mark Hagemann"
+date: "8/29/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+TODO for manuscript figures
+
+- get project to load (or do everything in remote desktop)
+- Make flowchart fig
+  - sketch out on paper
+  - pick illustration software (likely google slides?)
+- Make pixel maps fig
+  - sketch out on paper
+  - select illustrative nodes (3-4)
+    - truth flagging
+    - large error (after flagging)
+    - pixel number (high, low)
+    - regularization
+  - make maps using rivertile function
