@@ -1,0 +1,121 @@
+---
+title: "Research update 20190809"
+author: "Mark Hagemann"
+date: "8/9/2019"
+output: 
+  ioslides_presentation:
+    incremental: true
+---
+
+
+
+
+```{r setup, include=FALSE}
+library(knitr)
+opts_chunk$set(
+  echo = FALSE,
+  message = FALSE,
+  warning = FALSE,
+  cache = TRUE
+)
+
+opts_knit$set(root.dir = "~/Documents/swot-error/")
+```
+
+
+```{r}
+library(ProjectTemplate)
+load.project()
+
+theme_set(theme_bw())
+
+sival_simple <- rt_valdata("output/area-error/orig_si/simple/")
+sival_composite <- rt_valdata("output/area-error/orig_si/composite/")
+sival_frac <- rt_valdata("output/area-error/orig_si/frac/")
+
+origval_simple <- rt_valdata("output/area-error/orig/simple/")
+origval_composite <- rt_valdata("output/area-error/orig/composite/")
+origval_frac <- rt_valdata("output/area-error/orig/frac/")
+
+```
+
+
+
+
+## Background
+
+- SWOT will measure river width, height, slope, etc. 
+- Measurements are provided with estimated uncertainty
+- Task: validate these estimates of uncertainty
+- Use simulated SWOT data products from Sacramento River, CA
+
+## Remember QQ plots? 
+
+- Here's one validating river height uncertainty
+
+```{r}
+origval_composite %>% 
+  filter(variable == "wse") %>% 
+  rt_val_qq() + 
+  ylab("standardized error")
+```
+
+## Width QQ plot
+
+```{r}
+
+bind_rows(composite = origval_composite, 
+          frac = origval_frac, 
+          simple = origval_simple, .id = "method") %>% 
+  filter(variable == "width") %>% 
+    rt_val_qq(groupvars = "method") +
+  facet_wrap(~method) + 
+  ylab("standardized error") +
+  ylim(-8, 15)
+```
+
+
+
+## Updated uncertainty model
+
+```{r}
+
+bind_rows(composite = sival_composite, 
+          frac = sival_frac, 
+          simple = sival_simple, .id = "method") %>% 
+  filter(variable == "width") %>% 
+    rt_val_qq(groupvars = "method") +
+  facet_wrap(~method) +
+  ylab("standardized error") +
+  ylim(-8, 15)
+```
+
+
+## BREAKING NEWS
+
+- Uncertainty is always calculated using "composite" model?!
+
+```
+area_unc = area_uncert(
+    pixel_area, water_fraction, water_fraction_uncert, darea_dheight,
+    klass, Pfd, Pmd, good, Pca=Pca, Pw=Pw, Ptf=Ptf, ref_dem_std=ref_dem_std,
+    interior_water_klass=interior_water_klass,
+    water_edge_klass=water_edge_klass, land_edge_klass=land_edge_klass,
+    method='composite')
+```
+
+## Updated (original water fraction uncertainty)
+
+```{r}
+origval_simple_new <- rt_valdata("output/area-error/orig_new/simple/")
+origval_composite_new <- rt_valdata("output/area-error/orig_new/composite/")
+origval_frac_new <- rt_valdata("output/area-error/orig_new/frac/")
+
+bind_rows(composite = origval_composite_new, 
+          frac = origval_frac_new, 
+          simple = origval_simple_new, .id = "method") %>% 
+  filter(variable == "area_total") %>% 
+    rt_val_qq(groupvars = "method") +
+  facet_wrap(~method)
+```
+

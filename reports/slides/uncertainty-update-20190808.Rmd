@@ -1,0 +1,275 @@
+---
+title: "Uncertainty update 8/8/19"
+author: "Mark Hagemann"
+date: "8/8/2019"
+output: 
+  ioslides_presentation:
+    incremental: true
+---
+
+```{r setup, include=FALSE}
+
+library(knitr)
+
+opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE, cache = TRUE)
+opts_knit$set(root.dir = "~/Documents/swot-error")
+```
+
+```{r}
+library(ProjectTemplate)
+load.project()
+library(plotly)
+
+theme_set(theme_bw())
+
+options(ro_basedir = "D:/data/riverobs-output/sacruns_latest")
+
+nodevaldf_noflag <- rt_valdata(rodir(65), flag_out_nodes = FALSE)
+nodevaldf <- rt_valdata(rodir(65), flag_out_nodes = TRUE)
+reachvaldf <- rt_valdata(rodir(65), flag_out_nodes = TRUE)
+
+
+valvars <- c("area_total", "width", "wse")
+```
+
+
+
+## Overview
+
+- Node-level validation
+- Reach-level validation
+- Updates, experiments on water fraction uncertainty
+
+
+## Standarized error at node level
+
+```{r}
+nodevalgg <- nodevaldf %>% 
+  filter(variable %in% valvars) %>% 
+  rt_val_scatter(yvar = "relerr") + 
+  geom_point(aes(y = yval, color = as.factor(reach_id), 
+                 text = reach_id))
+
+ggplotly(nodevalgg, tooltip = "text")  
+```
+
+## Zoom in
+
+```{r}
+nodevaldf %>% 
+  filter(variable %in% valvars) %>% 
+  rt_val_scatter(yvar = "relerr") + 
+  geom_point(aes(y = yval, color = as.factor(reach_id), 
+                 text = reach_id)) +
+  coord_cartesian(ylim = c(-5, 5))
+
+# nodevaldf %>%   
+#   filter(variable %in% valvars) %>% 
+#   rt_val_scatter(yvar = "relerr", plot = FALSE) %>% 
+#   mutate(abserr = abs(yval)) %>% 
+#   ggplot(aes(x = node_id, y = abserr)) + 
+#   geom_point(aes(color = as.factor(reach_id))) + 
+#   facet_wrap(~variable) + 
+#   coord_cartesian(ylim = c(0, 3.5))
+```
+
+
+## qqplots at node level
+
+```{r}
+
+nodevaldf %>% 
+  filter(variable %in% valvars) %>% 
+  rt_val_qq() + 
+  facet_wrap(~variable, scales = "free_y") + 
+  ylab("standardized node-level error")
+```
+
+
+## Standardized error at reach level
+
+```{r}
+
+
+rtncfile <- path(rodir(65), "rt.nc")
+rtncfile_truth <- path(rodir(65), "rt_gdem.nc")
+reachnc <- nc_open(rtncfile)
+reachdf <- rt_read(rtncfile, group = "reaches", keep_na_vars = TRUE)
+truthdf <- rt_read(rtncfile_truth, group = "reaches", keep_na_vars = TRUE)
+
+valmap <- c(wse = "wse_r_u", area_total = "area_tot_u", 
+            slope = "slope_r_u", width = "width_u")
+
+uncdf <- reachdf %>% 
+  # glimpse() %>% 
+  select(reach_id, wse_r_u, area_tot_u, slope_r_u, width_u) %>% 
+  gather(key = "variable", value = "sigma_est", -reach_id) %>% 
+  mutate(variable = plyr::mapvalues(variable, from = valmap, 
+                                    to = names(valmap)))
+
+estdf <- reachdf %>% 
+  # glimpse() %>% 
+  select(reach_id, wse, area_total, slope, width) %>% 
+  gather(key = "variable", value = "est", -reach_id) %>% 
+  left_join(uncdf, by = c("reach_id", "variable"))
+
+reachvaldf <- truthdf %>% 
+  select(reach_id, wse, area_total, slope, width) %>% 
+  gather(key = "variable", value = "truth", -reach_id) %>% 
+  left_join(estdf, by = c("reach_id", "variable")) %>% 
+  mutate(pixc_err = est - truth, 
+         relerr = (est - truth) / sigma_est)
+  
+
+
+rt_val_scatter(reachvaldf, 
+               variables = c("width", "area_total", "wse", "slope"), 
+               yvar = "relerr")
+```
+
+
+```{r, eval = FALSE}
+rt_val_qq(reachvaldf, vars = valvars)
+```
+
+
+
+## node area
+
+```{r}
+nodevalgg <- nodevaldf %>% 
+  filter(variable == "area_total") %>% 
+  rt_val_qq() + 
+  geom_point(aes(text = node_id)) + 
+  ylab("standardized node-level error")
+
+ggplotly(nodevalgg, tooltip = "text")
+  
+```
+
+## Water fraction ($\alpha$) uncertainty estimates
+
+Current: $\sigma^2_{\alpha} = \frac{p^2}{N_l (\mu_w - \mu_l)^2}$
+
+Bayesian:
+
+  - scale-invariant prior: $\sigma^2_{\alpha, new} = \frac{N_l^2 p^2}{(\mu_w - \mu_l)^2(N_l - 1)^2(N_l - 2)}$
+  - Uniform prior ($0 < \alpha < 1$)
+  - high-variance conjugate prior
+
+
+## Results:
+
+
+```{r}
+include_graphics("~/Documents/swot-error/fig/uncmethods_qq.png", dpi = 300)
+```
+
+
+## Difficulties with Bayesian approach
+
+- Uniform prior: 
+  - Selection bias: nodes consist of pixels with certain classifications only. 
+  - Spatial dependence of $\alpha$: circular features have higher $\alpha$ than linear features
+- Scale-invariant prior: 
+  - $\theta$ (linear transform of $\alpha$) equally likely between 1 and 2 as between 10000 and 20000
+
+## Updated reach-level results
+
+```{r}
+
+basedir_new <- "output/area-error/orig_si/"
+rtncfile_new <- path(basedir_new, "rt.nc")
+rtncfile_truth_new <- path(basedir_new, "rt_gdem.nc")
+reachnc_new <- nc_open(rtncfile_new)
+reachdf_new <- rt_read(rtncfile_new, group = "reaches", keep_na_vars = TRUE)
+truthdf_new <- rt_read(rtncfile_truth_new, group = "reaches", keep_na_vars = TRUE)
+
+valmap <- c(wse = "wse_r_u", area_total = "area_tot_u", 
+            slope = "slope_r_u", width = "width_u")
+
+uncdf_new <- reachdf_new %>% 
+  # glimpse() %>% 
+  select(reach_id, wse_r_u, area_tot_u, slope_r_u, width_u) %>% 
+  gather(key = "variable", value = "sigma_est", -reach_id) %>% 
+  mutate(variable = plyr::mapvalues(variable, from = valmap, 
+                                    to = names(valmap)))
+
+estdf_new <- reachdf_new %>% 
+  # glimpse() %>% 
+  select(reach_id, wse, area_total, slope, width) %>% 
+  gather(key = "variable", value = "est", -reach_id) %>% 
+  left_join(uncdf_new, by = c("reach_id", "variable"))
+
+reachvaldf_new <- truthdf_new %>% 
+  select(reach_id, wse, area_total, slope, width) %>% 
+  gather(key = "variable", value = "truth", -reach_id) %>% 
+  left_join(estdf_new, by = c("reach_id", "variable")) %>% 
+  mutate(pixc_err = est - truth, 
+         relerr = (est - truth) / sigma_est)
+  
+
+
+rt_val_scatter(reachvaldf_new, 
+               variables = c("width", "area_total", "wse", "slope"), 
+               yvar = "relerr")
+```
+
+
+```{r, eval = FALSE}
+rt_val_qq(reachvaldf_new, vars = valvars)
+```
+
+
+
+
+## Largest errors
+
+```{r}
+simple_pix <- join_pixc("output/area-error/orig_si/", 
+                        pixcname = "../pixel_cloud_orig_si.nc")
+simple_pix_gdem <- join_pixc("output/area-error/orig_si/", 
+                        pixcname = "../pixel_cloud_orig_si.nc")
+
+library(leaflet)
+
+badnodes_new <- badnodes(nodevaldf, n = 6)
+
+pixdf1 <- simple_pix %>% 
+  filter(node_index %in% badnodes_new) %>% 
+  transmute(azimuth_index, range_index, node_index, reach_index,
+            lat_med = latitude, lon_med = longitude,
+            lat_wd = latitude_vectorproc, lon_wd = longitude_vectorproc,
+            water_frac, water_frac_uncert,
+            classification, fdr = false_detection_rate, 
+            mdr = missed_detection_rate, Pw = prior_water_prob,
+            pixel_area)
+pixdf2 <- simple_pix_gdem %>% 
+  filter(node_index %in% badnodes_new) %>% 
+  transmute(azimuth_index, range_index, node_index, reach_index,
+            lat_gdem = latitude, lon_gdem = longitude, pixel_area)
+
+classpal <- colorFactor("Dark2", pixdf1$classification)
+
+leaflet_scaled <- leaflet() %>% 
+  addTiles() %>% 
+  addCircles(~lon_gdem, ~lat_gdem, 
+             radius = ~sqrt(pixel_area / pi),
+             fillColor = "black", fillOpacity = 1, stroke = FALSE, 
+             data = pixdf2) %>% 
+  addCircles(~lon_wd, ~lat_wd, radius = ~sqrt(pixel_area / pi * water_frac),
+             fillColor = ~classpal(classification), stroke = FALSE, 
+             fillOpacity = 0.6, data = pixdf1, 
+             popup = ~paste("node: ", node_index))
+
+leaflet_scaled
+```
+
+## Next steps
+
+- Wrap up water fraction (suggest updating uncertainty calculation only)
+- Write up random error results
+    - also code to reproduce:
+    - [github.com/markwh/rivertile](https://github.com/markwh/rivertile)
+    - [github.com/markwh/rtvalidate](https://github.com/markwh/rtvalidate)
+- layover/systematic errors?

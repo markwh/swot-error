@@ -1,0 +1,118 @@
+---
+title: "Area outliers and regularization"
+author: "Mark Hagemann"
+date: "8/16/2019"
+output: 
+  ioslides_presentation:
+    keep_md: true
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+opts_chunk$set(echo = FALSE, results = "asis", message = FALSE, warning = FALSE)
+opts_knit$set(root.dir = "~/Documents/swot-error")
+
+```
+
+```{r}
+library(ProjectTemplate)
+load.project()
+```
+
+
+## Composite aggregation
+
+```{r}
+
+dirnos <- ro_manifest() %>% 
+  filter(notes == "manuscript", 
+         refdem == "GDEM",
+         land_sig0 == "-100dB", 
+         pass != 264, 
+         day <= 302) %>% 
+  # pull(day)
+  pull(outno)
+dirs <- fs::path("fig/spatial_reg_figs/composite/", dirnos)
+# dirs <- list.dirs("fig/spatial_reg_figs/composite/", full.names = TRUE)[-1]
+# dirnos <- list.dirs("fig/spatial_reg_figs/composite/", full.names = FALSE)[-1]
+
+nplots <- 2
+
+# dirs <- dirs[1]
+# dirnos <- dirnos[1]
+
+for (j in seq_along(dirs)) {
+  dir <- dirs[j]
+  dirno <- dirnos[j]
+  for (i in 1:nplots) {
+    map1i <- fs::path(dir, paste0("map", i, ".png")) %>% 
+      fs::path("~/Documents/swot-error/", .)
+    map2i <- normalizePath(fs::path(dir, paste0("map", i, "_scaled.png")))
+    scatteri <- normalizePath(fs::path(dir, paste0("scatter", i, ".png")))
+    
+    if (!(file.exists(map1i) && file.exists(map2i) && 
+          file.exists(scatteri))) next
+    
+    
+    manifrow <- ro_manifest() %>% 
+      filter(outno == dirno)
+
+
+    cat(sprintf("\n\n## Pass %s Day %s Rank %s \n\n", manifrow$pass, manifrow$day, i))
+
+    cat(paste0('<img src="', map1i, '" height = "600" '), "/>\n")
+
+    cat(sprintf("\n\n## Pass %s Day %s Rank %s \n\n", manifrow$pass, manifrow$day, i))
+    cat(paste0('<img src="', map2i, '" height = "600" '), "/>\n")
+
+    cat(sprintf("\n\n## Pass %s Day %s Rank %s \n\n", manifrow$pass, manifrow$day, i))
+
+    cat(paste0('<img src="', scatteri, '" width = "500" '), "/>\n")
+  }
+}
+
+```
+
+
+## Water Fraction aggregation
+
+
+```{r}
+
+nplots <- 2
+
+dirs <- fs::path("fig/spatial_reg_figs/frac/", dirnos)
+
+for (j in seq_along(dirs)) {
+  dir <- dirs[j]
+  dirno <- dirnos[j]
+  for (i in 1:nplots) {
+    map1i <- fs::path(dir, paste0("map", i, ".png")) %>% 
+      fs::path("~/Documents/swot-error/", .)
+    map2i <- normalizePath(fs::path(dir, paste0("map", i, "_scaled.png")))
+    scatteri <- normalizePath(fs::path(dir, paste0("scatter", i, ".png")))
+    
+    if (!(file.exists(map1i) && file.exists(map2i) && 
+          file.exists(scatteri))) next
+    
+    
+    manifrow <- ro_manifest() %>% 
+      filter(outno == dirno)
+
+
+    cat(sprintf("\n\n## Pass %s Day %s Rank %s \n\n", manifrow$pass, manifrow$day, i))
+
+    cat(paste0('<img src="', map1i, '" height = "600" '), "/>\n")
+
+    cat(sprintf("\n\n## Pass %s Day %s Rank %s \n\n", manifrow$pass, manifrow$day, i))
+    cat(paste0('<img src="', map2i, '" height = "600" '), "/>\n")
+
+    cat(sprintf("\n\n## Pass %s Day %s Rank %s \n\n", manifrow$pass, manifrow$day, i))
+
+    cat(paste0('<img src="', scatteri, '" width = "500" '), "/>\n")
+  }
+}
+
+```
+
+

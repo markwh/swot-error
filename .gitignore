@@ -5,6 +5,7 @@
 .Rprofile
 data
 *.png
+*.jpg
 *.gif
 *cache
 riverobs-output
@@ -16,4 +17,8 @@ output
 *pycache*
 *.PNG
 *.RData
+*.pdf
+*.ppt
+*.pptx
+*.docx
 fig/area-error*

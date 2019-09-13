@@ -64,3 +64,5 @@ rt_val_qq <- function(valdf, vars = "all", plot = TRUE, groupvars = "variable") 
     geom_abline(slope = 1, intercept = 0)
   out
 }
+
+

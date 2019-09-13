@@ -24,7 +24,10 @@ adjust_along <- function(alongvals, nodeinds) {
 #' @param verbose Display progress updates?
 #' @importFrom fastmatch fmatch
 #' @export
-us_ds <- function(pcdf, verbose = FALSE) {
+us_ds <- function(pcdf, start = c("midstream", "ends"), verbose = FALSE) {
+  
+  start <- match.arg(start)
+  
   rangeinds <- as.numeric(pcdf$range_index)
   aziminds <- as.numeric(pcdf$azimuth_index)
   reachinds <- as.numeric(pcdf$reach_index)
@@ -61,8 +64,14 @@ us_ds <- function(pcdf, verbose = FALSE) {
   uscount <- 1
   dscount <- 1
   
-  startinds_us <- which(pcdf$node_index == max(pcdf$node_index))
-  startinds_ds <- which(pcdf$node_index == min(pcdf$node_index))
+  if (start == "ends") {
+    startinds_us <- which(pcdf$node_index == max(pcdf$node_index))
+    startinds_ds <- which(pcdf$node_index == min(pcdf$node_index))
+  } else {
+    startinds_us <- which(abs(pcdf$cross_reach) < 5)
+    startinds_ds <- startinds_us
+  }
+
   
   connect_all <- function(startinds, upstream = FALSE) {
     front_cur <- startinds # Indices coprising current front

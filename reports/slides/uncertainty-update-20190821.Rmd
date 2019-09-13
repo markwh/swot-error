@@ -1,0 +1,110 @@
+---
+title: 'Uncertainty update: 20190821'
+author: "Mark Hagemann"
+date: "8/21/2019"
+output: 
+  ioslides_presentation:
+    keep_md: true
+    incremental: true
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+library(fs)
+opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE, results = "asis",
+               cache = TRUE)
+opts_knit$set(root.dir = "~/Documents/swot-error")
+
+valfigpath <- "~/Documents/manuscript-uncval/fig/node-reach-val"
+mapfigpath <- "~/Documents/swot-error/fig/spatial_reg_figs/"
+```
+
+
+```{r}
+options(ro_basedir = "D:/data/riverobs-output/sacruns_latest")
+library(ProjectTemplate)
+load.project()
+```
+
+
+## Node-level validation: composite
+
+```{r}
+include_graphics(path(valfigpath, "qq-node-composite-low.png"), dpi = 200)
+```
+
+
+## Node-level validation: Water fraction
+
+```{r}
+include_graphics(path(valfigpath, "qq-node-frac-low.png"), dpi = 200)
+```
+
+
+## Composite aggregation maps
+
+```{r}
+compnos <-   c(68,  80, 80, 68, 82)
+compnodes <- c(286, 78, 372, 567, 68)
+compranks <- c(2, 1, 2, 1, 1)
+
+fracnos <- c(82)
+fracnodes <- c(38)
+fracranks <- c(4)
+
+
+for (j in seq_along(compnos)) {
+  # print(j)
+  dirno <- compnos[j]
+  # dir <- rodir(dirno, "composite")
+
+  i <- compranks[j]
+  # for (i in 1:nplots) {
+  
+  map1i <- path(mapfigpath, "composite", dirno, paste0("map", i, ".png"))
+  
+  map2i <- path(mapfigpath, "composite", dirno, paste0("map", i, "_scaled.png"))
+  scatteri <- path(mapfigpath, "composite", dirno, paste0("scatter", i, ".png"))
+  
+  
+  manifrow <- ro_manifest() %>% 
+    filter(outno == dirno)
+
+
+  cat(sprintf("\n\n## Pass %s Day %s \n\n", manifrow$pass, manifrow$day))
+
+  cat(paste0('<img src="', map1i, '" height = "600" '), "/>\n")
+
+  cat(sprintf("\n\n## Pass %s Day %s \n\n", manifrow$pass, manifrow$day))
+  cat(paste0('<img src="', map2i, '" height = "600" '), "/>\n")
+
+  cat(sprintf("\n\n## Pass %s Day %s \n\n", manifrow$pass, manifrow$day))
+
+  cat(paste0('<img src="', scatteri, '" width = "500" '), "/>\n")
+  # }
+}
+```
+
+## Pass 527 Day 302 {.columns-2}
+
+```{r}
+include_graphics(fs::path(mapfigpath, "node68_2.png"), dpi = 250)
+```
+
+```{r}
+include_graphics(fs::path(mapfigpath, "node68_1.png"), dpi = 250)
+```
+
+
+## Pass 527 Day 302 {.columns-2}
+
+```{r}
+include_graphics(fs::path(mapfigpath, "node68_3.png"), dpi = 250)
+```
+
+
+```{r}
+
+include_graphics(fs::path(mapfigpath, "node68_4.png"), dpi = 250)
+```
+

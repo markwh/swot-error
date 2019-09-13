@@ -1,0 +1,64 @@
+---
+title: "Validation figs"
+author: "Mark Hagemann"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, warning = FALSE, message =FALSE}
+figdir <- "../robjs/"
+list.files(figdir)
+figfiles <- c(
+  "map_gg",
+  "map_zoomin",
+  "ecdf_gg",
+  "qqgg_nodes_frac_low",
+  "scatter_reach_frac_low", 
+  "widtherr_gg1", 
+  "wseerr_gg1",
+  "widthqq_compare",
+  "widthqq_compare_all3",
+  "wseqq_compare"
+)
+
+# figenv <- new.env()
+
+for (file in paste0(figfiles, ".RData")) {
+  load(paste0(figdir, file), envir = figenv)
+}
+
+figlist <- as.list(figenv)[figfiles]
+
+
+for (fig in figlist) {
+  print(fig)
+}
+
+```
+
+
+Bullet point results:
+
+0. Simulated SWOT measurements of river width, height, and slope--including estimated meausurement uncertainty--were validated against synthetic truth for node- and reach-level data products. 
+1. Height and slope (random component) errors are unbiased and well characterized by theoretical uncertainty model, following an approximate normal distribution. 
+  - Adding unmodeled sources of error (layover, reference DEM error) results in height errors with RMSE approximately 20% larger than predicted by the model
+2. Width errors are well characterized by the uncertainty modelin the middle percentiles of their distribution, but exhibit heavy tails (especially upper tail) not accounted for by the model.
+  - Different aggregation methods (pixel to node) exacerbate the heavy-tail behavior of the errors. 
+  - At the reach scale this effect is exaggerated, resulting in errors with RMSE approximately 4.8 times larger than predicted by the model. 
+  - The heavy-tailed behavior is more pronounced at higher flow conditions, do to added complexity of the river boundaries (sloughs, etc.)
+3. Error behavior as a function of pixel count and cross-track distance is well characterized by the uncertainty model.
+4. Some of the worst errors (outliers) are likely artifacts due to higher spatial resolutions of truth data, but it is not clear how much of the heavy tail behavior is attributable to this. 
+
+
+
+
+
+
+
+
+
+
+

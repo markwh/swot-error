@@ -27,10 +27,28 @@ push2manuscript(foo)
 
 ```
 
+Function to save ggplots using a methodical naming convention.
+
+```{r}
+save_plot <- function(plot,
+                      type, scale = c("node", "reach"), agg = c("composite", "frac", "simple"),
+                      noise = c("low", "high"), ...) {
+  scale <- match.arg(scale)
+  agg <- match.arg(agg)
+  noise <- match.arg(noise)
+  outname <- sprintf("~/Documents/manuscript-uncval/fig/%s-%s-%s-%s.png", type, scale, agg, noise)
+  
+  ggsave(filename = outname, plot = plot, ...)
+  knitr::include_graphics(outname, dpi = 300)
+  # message(outname)
+}
+```
+
+
 
 ## Setup
 
-Location of validation data, including which directories to use
+### Location of validation data, including which directories to use
 
 ```{r}
 # varyvars <- c("pass", "day", "gdem_name")
@@ -40,35 +58,73 @@ valnums <- ro_manifest() %>%
   filter(notes == "manuscript") %>% 
   filter(outno != 74, outno != 87) %>% # Remove this if/when the run is fixed.
   pull(outno)
-valdirs <- rodir(valnums)
+valdirs_simple <- rodir(valnums, "simple")
+valdirs_composite <- rodir(valnums, "composite")
+valdirs_frac <- rodir(valnums, "frac")
 
 ro_manifest() %>% 
   filter(outno %in% valnums)
-valdf_master <- rt_valdata_multi(runnos = valnums, flag_out_nodes = FALSE) %>% 
-  mutate(xtrk_dist = abs(xtrk_dist))
+``` 
+
+### Node valdation data.frames
+
+```{r}
+
+keepvars <- c("run", "day", "pass", "reach_id", "node_id", 
+              "variable", "pixc_val", "gdem_val", "pixc_err", "sigma_est", 
+              "xtrk_dist", "n_good_pix", "land_sig0", "refdem")
+
+valdf_simple <- rt_valdata_multi(runnos = valnums, group = "nodes", "simple") %>% 
+  mutate(xtrk_dist = abs(xtrk_dist)) %>% 
+  select(!!keepvars)
+valdf_composite <- rt_valdata_multi(runnos = valnums, group = "nodes", "composite") %>% 
+  mutate(xtrk_dist = abs(xtrk_dist)) %>% 
+  select(!!keepvars)
+valdf_frac <- rt_valdata_multi(runnos = valnums, group = "nodes", "frac") %>% 
+  mutate(xtrk_dist = abs(xtrk_dist)) %>% 
+  select(!!keepvars)
+
+valdf_master <- list(simple = valdf_simple,
+                     composite = valdf_composite,
+                     frac = valdf_frac) %>% 
+  bind_rows(.id = "agg")
+
 valdf_gdem <- valdf_master %>% filter(refdem == "GDEM")
 valdf_srtm <- valdf_master %>% filter(refdem == "SRTM")
-reachvaldf <- rt_valdata_multi(valnums, group = "reaches")
 
-push2manuscript(valdf_master)
 
+# spread by variable for estimate, truth, sigma_est
 pixcvaldf <- valdf_master %>% 
-  select(run, reach_id, node_id, pixc_val, variable) %>% 
+  select(run, agg, reach_id, node_id, pixc_val, variable) %>% 
   spread(key = "variable", value = "pixc_val")
 gdemvaldf <- valdf_master %>% 
-  select(run, reach_id, node_id, gdem_val, variable) %>% 
+  select(run, agg, reach_id, node_id, gdem_val, variable) %>% 
   spread(key = "variable", value = "gdem_val")
 sigmaestdf <- valdf_master %>% 
-  select(run, reach_id, node_id, sigma_est, variable) %>% 
+  select(run, agg, reach_id, node_id, sigma_est, variable) %>% 
   spread(key = "variable", value = "sigma_est")
 
 push2manuscript(pixcvaldf)
+
+push2manuscript(valdf_master)
+
 push2manuscript(gdemvaldf)
 push2manuscript(sigmaestdf)
 
 ```
 
-Flow info
+
+### Reach validation
+
+```{r}
+
+reachvaldf_simple <- rt_valdata_multi(valnums, group = "reaches", "simple")
+reachvaldf_composite <- rt_valdata_multi(valnums, group = "reaches", "composite")
+reachvaldf_frac <- rt_valdata_multi(valnums, group = "reaches", "frac")
+```
+
+
+### Flow info
 
 ```{r}
 library(lubridate)
@@ -119,7 +175,7 @@ push2manuscript(run_tbl)
 
 ```{r}
 # valvars <- c("height", "height2", "slope", "width", "area_total")
-valvars <- c("wse", "slope", "width", "area_total")
+valvars <- c("wse", "slope", "width") #, "area_total")
 ```
 
 Summary stats
@@ -199,20 +255,20 @@ pass_mapdf <- function(pixcnc, outlen = 100) {
   out
 }
 
-passmapdf <- paste0(valdirs, "/pixel_cloud.nc") %>% 
+passmapdf <- paste0(valdirs_simple, "/pixel_cloud.nc") %>% 
   map(pass_mapdf) %>% 
   setNames(valnums) %>% 
   bind_rows(.id = "run") %>% 
   mutate(outno = as.numeric(run)) %>% 
   left_join(ro_manifest(), by = "outno")
 
-# Number of times each node is observed across validation data.
-nodecov <- valdf_gdem %>% 
-  mutate(reach_id = as.factor(reach_id)) %>% 
-  filter(variable == "latitude") %>% 
-  group_by(node_id, reach_id) %>% 
-  summarize(n = as.factor(n())) %>% 
-  ungroup()
+# # Number of times each node is observed across validation data.
+# nodecov <- valdf_gdem %>% 
+#   mutate(reach_id = as.factor(reach_id)) %>% 
+#   filter(variable == "latitude") %>% 
+#   group_by(node_id, reach_id) %>% 
+#   summarize(n = as.factor(n())) %>% 
+#   ungroup()
 ```
 
 Prior db data
@@ -221,9 +277,11 @@ Prior db data
 # ncloc <- path("D:/data/SWOT-prior/PriorDistributionFolder/netcdfV4/", "NA07.nc")
 ncloc <- "~/Documents/swot-error/data/priordb-update/Sac_sample_db15.nc"
 
-nodemapdf <- priornode_read(ncloc, nodecov$node_id, as_sf = FALSE) %>% 
-  mutate(reach_id = as.factor(reach_id)) %>% 
-  left_join(nodecov, by = c("node_id", "reach_id"))
+nodemapdf <- priornode_read(ncloc, seq(min(valdf_master$node_id), 
+                                       max(valdf_master$node_id)), 
+                            as_sf = FALSE) %>% 
+  mutate(reach_id = as.factor(reach_id)) # %>% 
+  # left_join(nodecov, by = c("node_id", "reach_id"))
 ```
 
 
@@ -234,15 +292,21 @@ library(ggmap)
 allat <- c(passmapdf$latitude, nodemapdf$latitude)
 allon <- c(passmapdf$longitude, nodemapdf$longitude)
 pad <- 0.1
-bbox <- c(min(allon) - pad, min(allat) - pad,
-          max(allon) + pad, max(allat) + pad)
+bbox <- c(min(allon, na.rm = TRUE) - pad, min(allat, na.rm = TRUE) - pad,
+          max(allon, na.rm = TRUE) + pad, max(allat, na.rm = TRUE) + pad)
+bbox_zoomin <- c(-122.02, 39.475, -121.98, 39.5)
+
 bgmap <- get_map(location = bbox, maptype = "terrain-background",
                  crop = TRUE)
 satmap <- get_map(location = bbox, maptype = "satellite")
+satmap_zoomin <- get_map(location = bbox_zoomin, maptype = "satellite")
 
 nodemapdf %>% 
   filter(reach_id == 10)
 
+maplims <- list(xmin = -122.63, xmax = -121.2, ymin = 38.78, ymax = 39.9)
+linedf <- with(maplims, data.frame(lon = c(xmin, xmin, xmax, xmax, xmin), 
+                                   lat = c(ymin, ymax, ymax, ymin, ymin)))
 
 map_gg <- ggmap(bgmap, darken = c(0.4, "white")) +
   geom_line(aes(x = longitude, y = latitude,
@@ -254,15 +318,32 @@ map_gg <- ggmap(bgmap, darken = c(0.4, "white")) +
              data = nodemapdf) +
   # scale_color_hue(l = 70)
   # scale_color_viridis_d(begin = .2, end = 0.7)
-  scale_color_brewer(palette = "Paired")
+  scale_color_brewer(palette = "Paired")+ 
+  xlim(maplims$xmin, maplims$xmax) + 
+  ylim(maplims$ymin, maplims$ymax)
 push2manuscript(map_gg)
+
+library(legendMap)
+
+map_zoomin <- ggmap(satmap_zoomin, darken = c(0.1, "white")) + 
+    geom_point(aes(x = longitude, y = latitude, fill = reach_id), 
+             data = dplyr::filter(nodemapdf, reach_id %in% c(4, 5)),
+             # data = dplyr::filter(nodemapdf, node_id %in% 258:261),
+                          color = "black", shape = 21, size = 3) +
+  # scale bar from 3wen/legendMap
+  scale_bar(lon = -122.011, lat = 39.479, 
+                       distance_lon = 0.5, distance_lat = 0.05, distance_legend = 0.12,
+                       dist_unit = "km", legend_colour = "white",
+                       legend_size = 5)
+push2manuscript(map_zoomin)
 ```
 
 ### Distributions of validation axes variables
 
 ```{r}
 ggnpxhist <- valdf_gdem %>% 
-  filter(variable == "latitude") %>% 
+  filter(agg == "composite") %>%
+  filter(variable == "wse") %>%
   mutate(pass = as.factor(pass)) %>% 
   ggplot(aes(x = n_good_pix)) +
   # geom_density(aes(color = pass))
@@ -270,7 +351,8 @@ ggnpxhist <- valdf_gdem %>%
 ggnpxhist
 
 ggnpxviol <- valdf_gdem %>% 
-  filter(variable == "latitude") %>% 
+  filter(agg == "composite") %>% 
+  filter(variable == "wse") %>% 
   mutate(pass = as.factor(pass)) %>% 
   ggplot(aes(x = pass, y = n_good_pix)) +
   geom_violin()
@@ -294,16 +376,18 @@ ggxtkhist
 ```{r}
 
 npx_xtk_gg <- valdf_gdem %>% 
-  filter(variable == "latitude") %>% 
+  filter(variable == "wse", agg == "composite") %>% 
   mutate(pass = as.factor(pass), 
          shape = as.numeric(pass) + 20) %>% 
   ggplot(aes(x = xtrk_dist, y = n_good_pix, fill = pass,
              shape = pass)) +
-  geom_point() + 
+  geom_point(alpha = 0.4) + 
   # scale_shape(limits = 21:23) +
   scale_shape_manual(values = 21:23) +
   scale_y_log10() +
-  annotation_logticks(sides = "l")
+  annotation_logticks(sides = "l") + 
+  xlab("cross-track distance (m)") +
+  ylab("number of pixels")
 
 push2manuscript(npx_xtk_gg)
 ```
@@ -313,14 +397,24 @@ push2manuscript(npx_xtk_gg)
 ```{r}
 flowdf_plot <- flowdf %>% 
   filter(date %in% rundates) %>% 
-  left_join(rundatedf, by = c("date", "flow"))
+  left_join(rundatedf, by = c("date", "flow")) %>% 
+  mutate(pass = as.factor(pass))
+
+flowdf %>% 
+  filter(date >= "2009-01-15", date < "2009-04-01") %>% 
+  ggplot(aes(x = date, y = flow)) + 
+  geom_line() + 
+  geom_vline(aes(xintercept = date, color = pass), 
+             data = flowdf_plot, linetype = 1)
 
 ecdf_gg <- cdfdf %>% 
   ggplot(aes(x = flow, y = cdf)) + 
   geom_line() + 
   geom_point(aes(color = day), data = flowdf_plot, size = 3) +
+  geom_text(aes(label = day), data = flowdf_plot, nudge_x = 0) + 
   scale_x_log10() +
-  annotation_logticks(sides = "l")
+  annotation_logticks(sides = "l") + 
+  theme(legend.position = "none")
   # coord_flip()
 ecdf_gg
 push2manuscript(ecdf_gg)
@@ -328,19 +422,23 @@ push2manuscript(ecdf_gg)
 
 ### Validation results, part 1
 
-Histograms
+#### Histograms
 
 ```{r}
 # ambiguous_nodes(rodir(51))
 histgg1 <- valdf_gdem %>% 
+  filter(agg == "composite") %>% 
   rt_val_hist(scale = TRUE, plot = TRUE, 
                        curve = TRUE,
-                       vars = valvars)
+                       vars = valvars) + 
+  xlim(-8, 8)
 
+histgg1
 histgg2 <- valdf_srtm %>% 
   rt_val_hist(scale = TRUE, plot = TRUE, 
                        curve = TRUE,
-                       vars = valvars)
+                       vars = valvars) +
+  xlim(-8, 8)
 # histdf <- rt_val_hist(valdf_master, scale = TRUE, plot = FALSE)
 # 
 # histgg1 <- histdf %>%     
@@ -385,44 +483,97 @@ nodearea_plot(pixc_joined = join_pixc(rodir(18)), nodes = badnodes,
               node_truth = rt_read(fs::path(rodir(18), "rt_gdem.nc")))
 ```
 
-QQ plots
+#### QQ plots
 
 ```{r}
-qqgg1 <- valdf_gdem %>%
+
+qqgg_nodes_composite_low <- valdf_gdem %>% 
+  filter(agg == "composite") %>% 
   mutate(day = as.factor(day)) %>% 
-  rt_val_qq(plot = FALSE, vars = valvars, 
-            groupvars = c("variable", "day")) %>% 
-  ggplot(aes(x = theoretical, y = rel_err)) + 
-  # geom_point(aes(text = node_id, color = day)) +
+  rt_val_qq(vars = valvars, groupvars = c("variable", "day")) + 
   geom_point(aes(color = day)) +
-  facet_wrap(~variable, scales = "free_y") +
-  geom_abline(slope = 1, intercept = 0) +
-  scale_color_brewer(palette = "Set1")
+  scale_color_brewer(palette = "Set1") + ylab("standarized error") +
+  theme(legend.position = "bottom")
 
-qqgg2 <- valdf_srtm %>%
+save_plot(qqgg_nodes_composite_low, type = "qq", scale = "node", 
+          agg = "composite", noise = "low", height = 4, width = 5.5)
+
+qqgg_nodes_frac_low <- valdf_gdem %>% 
+  filter(agg == "frac") %>% 
   mutate(day = as.factor(day)) %>% 
-  dplyr::filter(variable %in% valvars) %>% glimpse() %>% 
-  group_by(variable, day) %>% 
-  mutate(rel_err = pixc_err / sigma_est, 
-         theoretical = qqnorm(rel_err, plot.it = FALSE)$x) %>% 
-  ungroup() %>% 
-  ggplot(aes(x = theoretical, y = rel_err)) + 
-  geom_point(aes(text = node_id, color = day)) +
-  facet_wrap(~variable, scales = "free_y") +
-  geom_abline(slope = 1, intercept = 0) +
-  scale_color_brewer(palette = "Set1")
+  rt_val_qq(vars = valvars, groupvars = c("variable", "day")) + 
+  geom_point(aes(color = day)) +
+  scale_color_brewer(palette = "Set1") + ylab("standarized error") +
+  theme(legend.position = "bottom")
+
+save_plot(qqgg_nodes_frac_low, type = "qq", scale = "node", 
+          agg = "frac", noise = "low", height = 4, width = 5.5)
 
 
-qqgg1
-qqgg2
-push2manuscript(qqgg1)
-# ggplotly(qqgg1, tooltip = "text")
+qqgg_nodes_simple_low <- valdf_gdem %>% 
+  filter(agg == "simple") %>% 
+  mutate(day = as.factor(day)) %>% 
+  rt_val_qq(vars = valvars, groupvars = c("variable", "day")) + 
+  geom_point(aes(color = day)) +
+  scale_color_brewer(palette = "Set1") + ylab("standarized error") +
+  theme(legend.position = "bottom")
+
+qqgg_nodes_simple_low
+save_plot(qqgg_nodes_simple_low, type = "qq", scale = "node", 
+          agg = "simple", noise = "low", height = 4, width = 5.5)
+
+
+
+qqgg_nodes_composite_high <- valdf_srtm %>% 
+  filter(agg == "composite") %>% 
+  mutate(day = as.factor(day)) %>% 
+  rt_val_qq(vars = valvars, groupvars = c("variable", "day")) + 
+  geom_point(aes(color = day)) +
+  scale_color_brewer(palette = "Set1") + ylab("standarized error") +
+  theme(legend.position = "bottom")
+
+save_plot(qqgg_nodes_composite_high, type = "qq", scale = "node", 
+          agg = "composite", noise = "high", height = 4, width = 5.5)
+
+qqgg_nodes_frac_high <- valdf_srtm %>% 
+  filter(agg == "frac") %>% 
+  mutate(day = as.factor(day)) %>% 
+  rt_val_qq(vars = valvars, groupvars = c("variable", "day")) + 
+  geom_point(aes(color = day)) +
+  scale_color_brewer(palette = "Set1") + ylab("standarized error") +
+  theme(legend.position = "bottom")
+
+save_plot(qqgg_nodes_frac_high, type = "qq", scale = "node", 
+          agg = "frac", noise = "high", height = 4, width = 5.5)
+
+
+qqgg_nodes_simple_high <- valdf_srtm %>% 
+  filter(agg == "simple") %>% 
+  mutate(day = as.factor(day)) %>% 
+  rt_val_qq(vars = valvars, groupvars = c("variable", "day")) + 
+  geom_point(aes(color = day)) +
+  scale_color_brewer(palette = "Set1") + ylab("standarized error") +
+  theme(legend.position = "bottom")
+
+qqgg_nodes_simple_high
+save_plot(qqgg_nodes_simple_high, type = "qq", scale = "node", 
+          agg = "simple", noise = "high", height = 4, width = 5.5)
+
+
 ```
 
-Scatterplot
+```{r}
+badnodes(valdf_frac, variable = "width")
+
+
+```
+
+
+#### Scatterplot
 
 ```{r}
 scattergg1 <- valdf_gdem %>% 
+  filter(agg == "composite") %>% 
   mutate(day = as.factor(day)) %>% 
   rt_val_scatter(variables = valvars, yvar = "relerr", plot = FALSE) %>% 
   ggplot(aes(x = xval, y = yval)) +
@@ -560,23 +711,72 @@ valdf_gdem %>%
 scatterplot
 
 ```{r}
-reach_gg1 <- reachvaldf %>% 
-  mutate(pass = as.factor(pass)) %>% 
-  rt_val_scatter(variables = valvars, yvar = "relerr", plot = FALSE) %>% 
-  ggplot(aes(x = xval)) +
-  # Add ribbons
-  geom_ribbon(aes(ymin = -1.96, ymax = 1.96), fill = "#dddddd") +
-  geom_ribbon(aes(ymin = -1, ymax = 1), fill = "#aaaaaa") +
-  # add points
-  geom_point(aes(color = pass, y = yval), alpha = 0.6) +
-  geom_point(aes(color = pass, y = -yval), alpha = 0) +
-  # geom_line(aes(color = pass, y = yval, group = day), alpha = 0.6) +
-  facet_wrap(~variable, scales = "free") +
+
+scatter_reach_simple_low <- reachvaldf_simple %>% 
+  filter(refdem == "GDEM") %>%
+  mutate(day = as.factor(day)) %>% #group_by(variable) %>% summarize(n = n())
+  rt_val_scatter(yvar = "relerr", variables = valvars) + 
+  geom_point(aes(y = yval, color = day)) +
   ylab("Scaled Error") + xlab("Reach ID") +
   scale_color_brewer(palette = "Set1") +
-  theme(legend.position = "bottom")
+  scale_x_continuous(breaks = 1:10, labels = 1:10)
+save_plot(scatter_reach_simple_low, "scatter", "reach", "simple", "low", width = 7, height = 5)
 
-push2manuscript(reach_gg1)
+
+scatter_reach_frac_low <- reachvaldf_frac %>% 
+  filter(refdem == "GDEM") %>%
+  mutate(day = as.factor(day)) %>% #group_by(variable) %>% summarize(n = n())
+  rt_val_scatter(yvar = "relerr", variables = valvars) + 
+  geom_point(aes(y = yval, color = day)) +
+  ylab("Scaled Error") + xlab("Reach ID") +
+  scale_color_brewer(palette = "Set1") +
+  scale_x_continuous(breaks = 1:10, labels = 1:10)
+save_plot(scatter_reach_frac_low, "scatter", "reach", "frac", "low", width = 7, height = 5)
+
+scatter_reach_composite_low <- reachvaldf_composite %>% 
+  filter(refdem == "GDEM") %>%
+  mutate(day = as.factor(day)) %>% #group_by(variable) %>% summarize(n = n())
+  rt_val_scatter(yvar = "relerr", variables = valvars) + 
+  geom_point(aes(y = yval, color = day)) +
+  ylab("Scaled Error") + xlab("Reach ID") +
+  scale_color_brewer(palette = "Set1") +
+  scale_x_continuous(breaks = 1:10, labels = 1:10)
+save_plot(scatter_reach_composite_low, "scatter", "reach", "composite", "low", width = 7, height = 5)
+
+
+scatter_reach_simple_high <- reachvaldf_simple %>% 
+  filter(refdem == "SRTM") %>%
+  mutate(day = as.factor(day)) %>% #group_by(variable) %>% summarize(n = n())
+  rt_val_scatter(yvar = "relerr", variables = valvars) + 
+  geom_point(aes(y = yval, color = day)) +
+  ylab("Scaled Error") + xlab("Reach ID") +
+  scale_color_brewer(palette = "Set1") +
+  scale_x_continuous(breaks = 1:10, labels = 1:10)
+save_plot(scatter_reach_simple_high, "scatter", "reach", "simple", "high", width = 7, height = 5)
+
+
+scatter_reach_frac_high <- reachvaldf_frac %>% 
+  filter(refdem == "SRTM") %>%
+  mutate(day = as.factor(day)) %>% #group_by(variable) %>% summarize(n = n())
+  rt_val_scatter(yvar = "relerr", variables = valvars) + 
+  geom_point(aes(y = yval, color = day)) +
+  ylab("Scaled Error") + xlab("Reach ID") +
+  scale_color_brewer(palette = "Set1") +
+  scale_x_continuous(breaks = 1:10, labels = 1:10)
+save_plot(scatter_reach_frac_high, "scatter", "reach", "frac", "high", width = 7, height = 5)
+
+scatter_reach_composite_high <- reachvaldf_composite %>% 
+  filter(refdem == "SRTM") %>%
+  mutate(day = as.factor(day)) %>% #group_by(variable) %>% summarize(n = n())
+  rt_val_scatter(yvar = "relerr", variables = valvars) + 
+  geom_point(aes(y = yval, color = day)) +
+  ylab("Scaled Error") + xlab("Reach ID") +
+  scale_color_brewer(palette = "Set1") +
+  scale_x_continuous(breaks = 1:10, labels = 1:10)
+save_plot(scatter_reach_composite_high, "scatter", "reach", "composite", "high", width = 7, height = 5)
+
+
+
 ```
 
 Hypothesis test

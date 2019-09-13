@@ -36,11 +36,12 @@ romatch <- function(runno, vary, manifest = ro_manifest()) {
 #' 
 #' @param runno Run number in roruns manifest to reference
 #' @param manifest as returned by \code{ro_manifest()}
-rodir <- function(runno, manifest = ro_manifest(),
+#' @param ... passed to \code{fs::path()}
+rodir <- function(runno, ..., manifest = ro_manifest(),
                   basedir = getOption("ro_basedir", 
                                       "~/Documents/swot-error/")) {
   rorow <- match(runno, manifest$outno)
-  out <- normalizePath(fs::path(basedir, manifest$outdir[rorow]))
+  out <- normalizePath(fs::path(basedir, manifest$outdir[rorow], ...))
   names(out) <- roruns$outno[rorow]
   out
 }
@@ -48,12 +49,15 @@ rodir <- function(runno, manifest = ro_manifest(),
 
 #' Get a bound data.frame for multiple runs. 
 #' 
-rt_valdata_multi <- function(runnos, manifest = ro_manifest(),
+#' @param ... passed to \code{rodir()}
+#' 
+rt_valdata_multi <- function(runnos, group = c("nodes", "reaches"), 
+                             ...,
+                             manifest = ro_manifest(),
                              basedir = getOption("ro_basedir"),
-                             group = c("nodes", "reaches"), 
                              flag_out_nodes = TRUE) {
   group <- match.arg(group)
-  dirs <- rodir(runnos, 
+  dirs <- rodir(runnos, ...,
                 manifest = manifest,
                 basedir = basedir)
   # browser()

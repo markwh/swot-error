@@ -19,11 +19,18 @@ data {
   int<lower=1> nlooks;
 }
 
+transformed data {
+  real<lower=0> theta_lower;
+  real<lower=0> theta_upper;
+  theta_lower = mu_l / nlooks;
+  theta_upper = mu_w / nlooks;
+}
+
 // The parameters accepted by the model. Our model
 // accepts two parameters 'mu' and 'sigma'.
 parameters {
   // real<lower=0,upper=1> wfrac;
-  real<lower=mu_l / nlooks, upper=mu_w / nlooks> theta;
+  real<lower=theta_lower, upper=theta_upper> theta;
 }
 
 // transformed parameters {
@@ -35,7 +42,7 @@ parameters {
 // The model to be estimated. We model the output
 model {
   y ~ gamma(nlooks, 1 / theta);
-  theta ~ uniform(mu_l / nlooks, mu_w / nlooks);
+  theta ~ uniform(theta_lower, theta_upper);
 }
 
 generated quantities {
